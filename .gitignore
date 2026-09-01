@@ -1,0 +1,28 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Production & Build outputs
+dist/
+**/dist/
+build/
+**/build/
+
+# Expo & Mobile artifacts
+.expo/
+**/.expo/
+*.apk
+*.aab
+*.ipa
+
+# Environment & Logs
+.env
+.env.local
+.env.*.local
+*.log
+
+# Editor & OS files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

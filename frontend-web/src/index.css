@@ -1,0 +1,110 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --color-primary: #0F6E56;
+    --color-success: #1D9E75;
+    --color-alert: #BA7517;
+    --color-bg-light: #E1F5EE;
+  }
+  
+  body {
+    background-color: #F8FAFC;
+    color: #0F172A;
+  }
+}
+
+/* Custom Print Styles for QR Thermal Stickers */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  #printable-sticker-area, #printable-sticker-area * {
+    visibility: visible;
+  }
+  #printable-sticker-area {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+  }
+  .no-print {
+    display: none !important;
+  }
+}
+
+/* Pulse Scan Animations */
+@keyframes scan-line {
+  0% { top: 0%; }
+  50% { top: 90%; }
+  100% { top: 0%; }
+}
+
+.animate-scan-line {
+  animation: scan-line 2.5s ease-in-out infinite;
+}
+
+/* html5-qrcode scanner color contour & high contrast fix */
+#webcam-reader {
+  color: #0F172A !important;
+  font-family: inherit !important;
+  border: none !important;
+  background-color: transparent !important;
+}
+
+#webcam-reader * {
+  color: #0F172A !important;
+}
+
+#webcam-reader button, #webcam-reader .html5-qrcode-element {
+  background-color: #0F6E56 !important;
+  color: #FFFFFF !important;
+  border: 1px solid #0F6E56 !important;
+  border-radius: 12px !important;
+  padding: 10px 20px !important;
+  font-weight: 800 !important;
+  font-size: 13px !important;
+  cursor: pointer !important;
+  margin: 6px 0 !important;
+  box-shadow: 0 4px 6px -1px rgba(15, 110, 86, 0.25) !important;
+  transition: all 0.2s ease !important;
+}
+
+#webcam-reader button:hover, #webcam-reader .html5-qrcode-element:hover {
+  background-color: #0B5442 !important;
+  border-color: #0B5442 !important;
+  transform: translateY(-1px) !important;
+}
+
+#webcam-reader a, #html5-qrcode-anchor-scan-type-change {
+  color: #0F6E56 !important;
+  text-decoration: underline !important;
+  font-weight: 800 !important;
+  font-size: 13px !important;
+  display: inline-block !important;
+  margin-top: 10px !important;
+}
+
+#webcam-reader select {
+  background-color: #FFFFFF !important;
+  color: #0F172A !important;
+  border: 1px solid #CBD5E1 !important;
+  border-radius: 10px !important;
+  padding: 8px 14px !important;
+  font-size: 13px !important;
+  font-weight: 700 !important;
+}
+
+#webcam-reader img[alt="Info icon"] {
+  opacity: 0.6 !important;
+  filter: none !important;
+}
+
+#webcam-reader__scan_region {
+  background-color: #000000 !important;
+  border-radius: 12px !important;
+  overflow: hidden !important;
+}
+
