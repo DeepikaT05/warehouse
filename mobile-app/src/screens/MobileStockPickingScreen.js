@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, ActivityIndicator, Alert } from 'react-native';
 import mobileApi from '../services/api';
+import QRScannerModal from '../components/QRScannerModal';
 
 export default function MobileStockPickingScreen({ route, navigation }) {
   const { orderId } = route.params || {};
@@ -10,6 +11,7 @@ export default function MobileStockPickingScreen({ route, navigation }) {
   const [barcodeInput, setBarcodeInput] = useState('');
   const [scanProcessing, setScanProcessing] = useState(false);
   const [scanAlert, setScanAlert] = useState(null);
+  const [cameraModalVisible, setCameraModalVisible] = useState(false);
 
   useEffect(() => {
     fetchOrderDetails();
@@ -29,21 +31,22 @@ export default function MobileStockPickingScreen({ route, navigation }) {
     }
   };
 
-  const handleScanSubmit = async () => {
-    if (!barcodeInput.trim()) return;
+  const executeScan = async (codeToScan) => {
+    const targetCode = codeToScan || barcodeInput;
+    if (!targetCode || !targetCode.trim()) return;
 
     setScanProcessing(true);
     setScanAlert(null);
 
     try {
       const res = await mobileApi.post(`/user/orders/${orderId}/scan-item`, {
-        barcode: barcodeInput.trim()
+        barcode: targetCode.trim()
       });
 
       if (res.data.valid) {
         setScanAlert({
           type: 'success',
-          title: res.data.alreadyPicked ? 'Already Picked' : '✓ Item Picked Successfully',
+          title: res.data.alreadyPicked ? 'Already Picked' : '✓ Item Verified & Picked',
           message: res.data.message
         });
         setBarcodeInput('');
@@ -67,11 +70,19 @@ export default function MobileStockPickingScreen({ route, navigation }) {
     }
   };
 
+  const handleCameraScan = (scannedData) => {
+    setCameraModalVisible(false);
+    if (scannedData) {
+      setBarcodeInput(scannedData);
+      executeScan(scannedData);
+    }
+  };
+
   const handleCompletePicking = async () => {
     try {
       const res = await mobileApi.post(`/user/orders/${orderId}/complete-picking`);
       if (res.data.success) {
-        Alert.alert('Success', 'Stock picking completed!');
+        Alert.alert('Picking Completed', `Order #${order.invoiceNo} stock picking is complete!`);
         navigation.goBack();
       }
     } catch (err) {
@@ -105,34 +116,42 @@ export default function MobileStockPickingScreen({ route, navigation }) {
       {/* Header Summary */}
       <View style={styles.headerCard}>
         <Text style={styles.orderNo}>Bill #{order.invoiceNo}</Text>
-        <Text style={styles.dealerName}>Dealer: {order.dealerName}</Text>
-        <Text style={styles.progressText}>Picked {totalPicked} of {totalRequired} Units</Text>
+        <Text style={styles.dealerName}>Dealer: {order.dealerName} ({order.garageName})</Text>
+        <Text style={styles.progressText}>Picked {totalPicked} of {totalRequired} Boxes</Text>
 
         <View style={styles.progressBarBg}>
           <View style={[styles.progressBarFill, { width: `${totalRequired > 0 ? (totalPicked / totalRequired) * 100 : 0}%` }]} />
         </View>
       </View>
 
-      {/* Barcode / QR Scan Section */}
+      {/* Barcode / Camera QR Scan Section */}
       <View style={styles.scanSection}>
-        <Text style={styles.sectionTitle}>Scan Product Sticker Barcode / QR</Text>
+        <View style={styles.sectionHeaderRow}>
+          <Text style={styles.sectionTitle}>Scan Box QR Sticker</Text>
+          <TouchableOpacity
+            style={styles.cameraBtn}
+            onPress={() => setCameraModalVisible(true)}
+          >
+            <Text style={styles.cameraBtnText}>📷 CAMERA SCANNER</Text>
+          </TouchableOpacity>
+        </View>
 
         <View style={styles.inputRow}>
           <TextInput
             style={styles.input}
-            placeholder="Scan QR sticker or enter VNK-..."
+            placeholder="Scan QR or enter VNK-..."
             placeholderTextColor="#94A3B8"
             value={barcodeInput}
             onChangeText={setBarcodeInput}
-            onSubmitEditing={handleScanSubmit}
+            onSubmitEditing={() => executeScan()}
             autoCapitalize="characters"
           />
           <TouchableOpacity
             style={[styles.scanBtn, scanProcessing && { opacity: 0.6 }]}
-            onPress={handleScanSubmit}
+            onPress={() => executeScan()}
             disabled={scanProcessing}
           >
-            <Text style={styles.scanBtnText}>{scanProcessing ? '...' : 'SCAN'}</Text>
+            <Text style={styles.scanBtnText}>{scanProcessing ? '...' : 'SUBMIT'}</Text>
           </TouchableOpacity>
         </View>
 
@@ -164,10 +183,10 @@ export default function MobileStockPickingScreen({ route, navigation }) {
                 <Text style={[styles.itemQty, done && styles.itemQtyDone]}>{pickedCount} / {item.quantity}</Text>
                 {!done && (
                   <TouchableOpacity
-                    style={{ backgroundColor: '#0F6E56', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 }}
+                    style={{ backgroundColor: '#0F6E56', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8 }}
                     onPress={() => {
                       setBarcodeInput(item.productName);
-                      handleScanSubmit();
+                      executeScan(item.productName);
                     }}
                   >
                     <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 11 }}>+ PICK</Text>
@@ -186,9 +205,16 @@ export default function MobileStockPickingScreen({ route, navigation }) {
         disabled={!isFullyPicked}
       >
         <Text style={styles.completeBtnText}>
-          {isFullyPicked ? '✓ Complete Stock Picking' : `Picking In Progress (${totalPicked}/${totalRequired})`}
+          {isFullyPicked ? '✓ Finish & Complete Stock Picking' : `Picking In Progress (${totalPicked}/${totalRequired})`}
         </Text>
       </TouchableOpacity>
+
+      {/* Camera Scanner Modal */}
+      <QRScannerModal
+        visible={cameraModalVisible}
+        onClose={() => setCameraModalVisible(false)}
+        onScan={handleCameraScan}
+      />
     </ScrollView>
   );
 }
@@ -198,14 +224,17 @@ const styles = StyleSheet.create({
   content: { padding: 14, paddingBottom: 40 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   loadingText: { color: '#64748B', fontSize: 13 },
-  headerCard: { backgroundColor: '#FFFFFF', borderRadius: 16, padding: 16, borderBorderWidth: 1, borderColor: '#E2E8F0', elevation: 2, marginBottom: 14 },
+  headerCard: { backgroundColor: '#FFFFFF', borderRadius: 16, padding: 16, borderWidth: 1, borderColor: '#E2E8F0', elevation: 2, marginBottom: 14 },
   orderNo: { fontSize: 18, fontWeight: '900', color: '#0F6E56' },
-  dealerName: { fontSize: 14, fontWeight: '700', color: '#1E293B', marginTop: 2 },
+  dealerName: { fontSize: 13, fontWeight: '700', color: '#1E293B', marginTop: 2 },
   progressText: { fontSize: 12, fontWeight: '700', color: '#475569', marginTop: 10, marginBottom: 4 },
   progressBarBg: { height: 10, backgroundColor: '#E2E8F0', borderRadius: 5, overflow: 'hidden' },
   progressBarFill: { height: '100%', backgroundColor: '#0F6E56', borderRadius: 5 },
   scanSection: { backgroundColor: '#FFFFFF', borderRadius: 16, padding: 16, borderWidth: 1, borderColor: '#E2E8F0', elevation: 2, marginBottom: 14 },
-  sectionTitle: { fontSize: 13, fontWeight: '800', color: '#0F172A', marginBottom: 10 },
+  sectionHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
+  sectionTitle: { fontSize: 13, fontWeight: '800', color: '#0F172A' },
+  cameraBtn: { backgroundColor: '#ECFDF5', borderWidth: 1, borderColor: '#0F6E56', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8 },
+  cameraBtnText: { color: '#0F6E56', fontSize: 10, fontWeight: '900' },
   inputRow: { flexDirection: 'row', gap: 8 },
   input: { flex: 1, backgroundColor: '#F1F5F9', borderWidth: 1, borderColor: '#CBD5E1', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, fontSize: 13, fontWeight: '700', color: '#0F172A' },
   scanBtn: { backgroundColor: '#0F6E56', borderRadius: 12, paddingHorizontal: 16, justifyContent: 'center', alignItems: 'center' },
@@ -228,3 +257,4 @@ const styles = StyleSheet.create({
   completeBtnDisabled: { backgroundColor: '#94A3B8' },
   completeBtnText: { color: '#FFFFFF', fontWeight: '900', fontSize: 14 }
 });
+

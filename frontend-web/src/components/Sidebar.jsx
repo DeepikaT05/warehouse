@@ -111,6 +111,19 @@ export default function Sidebar() {
               </NavLink>
 
               <NavLink
+                to="/invoices"
+                className={({ isActive }) =>
+                  `flex items-center gap-3 px-3.5 py-2.5 rounded-xl font-semibold text-xs transition-all ${
+                    isActive ? 'bg-[#0F6E56] text-white shadow-md' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                  }`
+                }
+              >
+                <FileSpreadsheet className="w-4 h-4 shrink-0 text-emerald-600" />
+                <span>Assign Bill (OCR Upload)</span>
+              </NavLink>
+
+
+              <NavLink
                 to="/history"
                 className={({ isActive }) =>
                   `flex items-center gap-3 px-3.5 py-2.5 rounded-xl font-semibold text-xs transition-all ${
