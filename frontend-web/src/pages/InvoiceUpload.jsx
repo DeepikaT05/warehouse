@@ -63,12 +63,15 @@ export default function InvoiceUpload() {
     setFormData({ ...formData, items: newItems });
   };
 
+  const [ocrMsg, setOcrMsg] = useState('');
+
   const handleFileUpload = async (e) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
       setFileName(file.name);
       setOcrScanning(true);
       setOcrSuccess(false);
+      setOcrMsg('');
 
       const ocrData = new FormData();
       ocrData.append('billFile', file);
@@ -85,13 +88,15 @@ export default function InvoiceUpload() {
             invoiceNo: data.invoiceNo || prev.invoiceNo,
             orderId: data.orderId || prev.orderId,
             dealerId: data.dealerId || prev.dealerId,
+            invoiceDate: data.invoiceDate || prev.invoiceDate,
             items: data.items && data.items.length > 0 ? data.items : prev.items
           }));
           setOcrSuccess(true);
+          setOcrMsg(`✨ Extracted Invoice #${data.invoiceNo} (${data.items?.length || 1} items) using ${res.data.modelUsed || 'Gemini 3.5 Flash-Lite'}!`);
         }
       } catch (err) {
         console.error('OCR extract error:', err);
-        alert('OCR Scan Notice: File received. Defaulting auto-extracted line items.');
+        alert('OCR Scan Notice: ' + (err.response?.data?.message || err.message));
       } finally {
         setOcrScanning(false);
       }
@@ -183,9 +188,18 @@ export default function InvoiceUpload() {
         </label>
 
         {ocrSuccess && (
-          <div className="bg-emerald-100 border border-emerald-300 rounded-xl p-2.5 text-xs text-emerald-800 font-extrabold flex items-center justify-center gap-2">
-            <CheckCircle2 className="w-4 h-4 text-[#0F6E56]" />
-            <span>OCR Extraction Complete! Invoice details & product items populated below.</span>
+          <div className="bg-emerald-100 border border-emerald-300 rounded-xl p-3 text-xs text-emerald-900 font-extrabold flex items-center justify-between shadow-xs">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-[#0F6E56] shrink-0" />
+              <span>{ocrMsg || 'OCR Extraction Complete! Invoice details & product items populated below.'}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setOcrSuccess(false)}
+              className="text-emerald-700 hover:text-emerald-900 text-xs font-bold px-2 py-0.5"
+            >
+              ✕
+            </button>
           </div>
         )}
       </div>

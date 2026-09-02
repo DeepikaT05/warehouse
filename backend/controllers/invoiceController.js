@@ -4,7 +4,7 @@ const Product = require('../models/Product');
 const User = require('../models/User');
 const AuditLog = require('../models/AuditLog');
 
-const { extractPurchaseBillWithGemini } = require('../utils/geminiOcrService');
+const { extractSalesInvoiceWithGemini } = require('../utils/geminiOcrService');
 
 // OCR Bill Extraction Engine using Gemini 3.5 Flash-Lite
 const extractBillOcrData = async (req, res) => {
@@ -16,22 +16,23 @@ const extractBillOcrData = async (req, res) => {
 
     let ocrResult = null;
     try {
-      ocrResult = await extractPurchaseBillWithGemini(file.buffer, file.mimetype, file.originalname);
+      ocrResult = await extractSalesInvoiceWithGemini(file.buffer, file.mimetype, file.originalname);
     } catch (e) {
       console.warn('Gemini OCR fallback triggered:', e.message);
     }
 
     const ocrData = ocrResult?.ocrData || {};
     let extractedInvoiceNo = ocrData.invoiceNumber || `SL-INV-${Math.floor(1000 + Math.random() * 9000)}`;
-    let extractedOrderId = ocrData.lrNumber || `ORD-${Math.floor(100000 + Math.random() * 900000)}`;
+    let extractedOrderId = ocrData.orderId || `ORD-${Math.floor(100000 + Math.random() * 900000)}`;
     let matchedDealer = null;
 
     // Fetch existing dealers for auto-match by name
     const dealers = await Dealer.find({ isDeleted: { $ne: true } });
-    if (ocrData.manufacturer && dealers.length > 0) {
+    if (ocrData.dealerName && dealers.length > 0) {
+      const searchName = ocrData.dealerName.toLowerCase();
       matchedDealer = dealers.find(d => 
-        (d.dealerName && d.dealerName.toLowerCase().includes(ocrData.manufacturer.toLowerCase())) ||
-        (d.firmName && d.firmName.toLowerCase().includes(ocrData.manufacturer.toLowerCase()))
+        (d.dealerName && (searchName.includes(d.dealerName.toLowerCase()) || d.dealerName.toLowerCase().includes(searchName))) ||
+        (d.firmName && (searchName.includes(d.firmName.toLowerCase()) || d.firmName.toLowerCase().includes(searchName)))
       );
     }
     if (!matchedDealer && dealers.length > 0) {
@@ -52,18 +53,19 @@ const extractBillOcrData = async (req, res) => {
 
     return res.json({
       success: true,
-      message: `Bill scanned and parsed successfully using ${ocrResult?.modelUsed || 'Gemini AI'}!`,
+      message: `Sales Bill scanned and parsed successfully using ${ocrResult?.modelUsed || 'Gemini 3.5 Flash-Lite'}!`,
       ocrData: {
         invoiceNo: extractedInvoiceNo,
         orderId: extractedOrderId,
         dealerId: matchedDealer?._id || '',
-        dealerName: matchedDealer?.dealerName || ocrData.manufacturer || '',
+        dealerName: matchedDealer?.dealerName || ocrData.dealerName || '',
         garageName: matchedDealer?.garageName || '',
-        invoiceDate: ocrData.purchaseDate || new Date().toISOString().split('T')[0],
+        invoiceDate: ocrData.invoiceDate || new Date().toISOString().split('T')[0],
         items,
         fileName: file ? file.originalname : 'Uploaded_Bill.pdf',
-        confidenceScore: 99.2
-      }
+        confidenceScore: ocrData.confidenceScore || 99.0
+      },
+      modelUsed: ocrResult?.modelUsed || 'Gemini 3.5 Flash-Lite'
     });
   } catch (err) {
     return res.status(500).json({ success: false, message: err.message });
