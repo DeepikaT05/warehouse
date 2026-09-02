@@ -271,7 +271,11 @@ export default function DispatchVerify() {
             </div>
             <div>
               <span className="text-[10px] text-slate-400 font-bold uppercase">Total Scanned</span>
-              <p className="font-bold text-slate-900">{verifiedBoxes.length} Boxes</p>
+              <p className="font-bold text-slate-900">
+                {((activeInvoice.status === 'dispatched' || activeInvoice.orderStatus === 'picking_completed' || existingDispatch)
+                  ? (activeInvoice.scannedCount || activeInvoice.items?.reduce((a, b) => a + (b.quantity || 1), 0) || 1)
+                  : verifiedBoxes.length)} Boxes
+              </p>
             </div>
           </div>
         )}
@@ -295,12 +299,12 @@ export default function DispatchVerify() {
           {existingDispatch && (
             <div className="bg-emerald-50 border border-emerald-300 rounded-xl p-3.5 flex items-center justify-between text-xs text-emerald-900">
               <div className="flex items-center gap-2">
-                <span className="font-extrabold text-[#0F6E56]">✓ DISPATCH STATEMENT ALREADY RECORDED:</span>
-                <span>Statement #{existingDispatch.dispatchNo} ({existingDispatch.scannedBoxQrIds?.length || 0} boxes dispatched)</span>
+                <span className="font-extrabold text-[#0F6E56]">✓ DISPATCH STATEMENT RECORDED:</span>
+                <span>Statement #{existingDispatch.dispatchNo} ({existingDispatch.scannedBoxQrIds?.length || 0} boxes verified & dispatched)</span>
               </div>
               <button
                 onClick={() => navigate(`/delivery-statement?dispatchId=${existingDispatch._id}`)}
-                className="bg-[#0F6E56] text-white font-extrabold px-3 py-1.5 rounded-lg hover:bg-[#0c5946] transition-colors"
+                className="bg-[#0F6E56] text-white font-extrabold px-3.5 py-1.5 rounded-lg hover:bg-[#0c5946] transition-colors"
               >
                 View Delivery Statement ➔
               </button>
@@ -309,11 +313,14 @@ export default function DispatchVerify() {
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
             {activeInvoice.items.map((item, idx) => {
-              const allBoxesForThisProduct = [
-                ...alreadyDispatchedBoxes.filter(b => (b.productName || '').toLowerCase().trim() === (item.productName || '').toLowerCase().trim()),
-                ...verifiedBoxes.filter(b => (b.productName || '').toLowerCase().trim() === (item.productName || '').toLowerCase().trim())
-              ];
-              const scannedForThisProduct = allBoxesForThisProduct.length;
+              const scannedFromCurrentQueue = verifiedBoxes.filter(
+                b => (b.productName || '').toLowerCase().trim() === (item.productName || '').toLowerCase().trim()
+              ).length;
+              const isAlreadyDispatched = activeInvoice.status === 'dispatched' || activeInvoice.orderStatus === 'picking_completed' || existingDispatch;
+              const scannedForThisProduct = isAlreadyDispatched
+                ? item.quantity
+                : (scannedFromCurrentQueue + (alreadyDispatchedBoxes.filter(b => (b.productName || '').toLowerCase().trim() === (item.productName || '').toLowerCase().trim()).length));
+
               const isComplete = scannedForThisProduct >= item.quantity;
               const progressPct = Math.min(100, Math.round((scannedForThisProduct / (item.quantity || 1)) * 100));
 
