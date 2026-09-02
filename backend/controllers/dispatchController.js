@@ -192,12 +192,16 @@ const confirmDispatch = async (req, res) => {
       if (box) {
         box.status = 'dispatched';
         box.assignedInvoiceNo = cleanInvoiceNo;
-        box.assignedDealerId = invoice.dealerId._id;
+        box.assignedDealerId = dealerId || invoice?.dealerId?._id || null;
         box.dispatchId = dispatch._id;
+        
+        const dName = invoice?.dealerName || 'Valued Dealer';
+        const gName = invoice?.garageName || 'Branch';
+
         box.history.push({
           stage: 'Invoice Assigned',
-          title: `Assigned to Invoice #${salesInvoiceNo}`,
-          description: `Dealer: ${invoice.dealerName} (${invoice.garageName})`,
+          title: `Assigned to Invoice #${cleanInvoiceNo}`,
+          description: `Dealer: ${dName} (${gName})`,
           performedBy: req.user?.name || 'Warehouse Operator',
           timestamp: new Date()
         });
@@ -211,7 +215,7 @@ const confirmDispatch = async (req, res) => {
         box.history.push({
           stage: 'Dispatched',
           title: `Dispatched via ${courierName || 'Courier'}`,
-          description: `Vehicle: ${vehicleNumber}, Driver: ${driverName} (${driverMobile})`,
+          description: `Vehicle: ${vehicleNumber || 'N/A'}, Driver: ${driverName || 'N/A'} (${driverMobile || 'N/A'})`,
           performedBy: req.user?.name || 'Warehouse Operator',
           timestamp: new Date()
         });
@@ -227,7 +231,7 @@ const confirmDispatch = async (req, res) => {
         box.history.push({
           stage: 'Delivered',
           title: 'Handed to Delivery Agent',
-          description: `Dispatched for delivery to ${invoice?.dealerName || 'Consignee / Customer'}`,
+          description: `Dispatched for delivery to ${dName}`,
           performedBy: req.user?.name || 'Warehouse Operator',
           timestamp: new Date()
         });

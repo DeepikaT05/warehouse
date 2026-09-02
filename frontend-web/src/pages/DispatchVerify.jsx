@@ -29,6 +29,8 @@ export default function DispatchVerify() {
   });
 
   const [dispatching, setDispatching] = useState(false);
+  const [dispatchError, setDispatchError] = useState('');
+  const [dispatchSuccess, setDispatchSuccess] = useState('');
 
   useEffect(() => {
     fetchInvoices();
@@ -46,19 +48,25 @@ export default function DispatchVerify() {
       const res = await api.get('/invoices');
       if (res.data.success && res.data.invoices.length > 0) {
         setInvoices(res.data.invoices);
-        if (!searchParams.get('invoiceNo')) {
+        const queryInv = searchParams.get('invoiceNo');
+        if (queryInv) {
+          setSelectedInvoiceNo(queryInv);
+        } else {
           setSelectedInvoiceNo(res.data.invoices[0].invoiceNo);
         }
       }
     } catch (err) {
       console.error(err);
+      setDispatchError('Could not load invoice list from server: ' + (err.response?.data?.message || err.message));
     }
   };
 
   const handleVerifyScan = async (qrIdToTest) => {
+    setDispatchError('');
     let targetQr = (qrIdToTest || scanQrInput).trim().toUpperCase();
     if (!targetQr) {
-      targetQr = 'VNK-00000001';
+      setDispatchError('Please enter or scan a Box QR ID to verify.');
+      return;
     }
 
     try {
@@ -104,9 +112,38 @@ export default function DispatchVerify() {
     }
   };
 
-  const handleConfirmDispatch = async () => {
-    if (verifiedBoxes.length === 0) {
-      alert('Please scan and verify at least one box before confirming dispatch!');
+  const handleConfirmDispatch = async (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    setDispatchError('');
+    setDispatchSuccess('');
+
+    // 1. Validation: Checked boxes
+    if (!verifiedBoxes || verifiedBoxes.length === 0) {
+      setDispatchError(`⚠️ Cannot Confirm Dispatch: No boxes have been verified for Invoice #${selectedInvoiceNo || 'N/A'}. Please scan or enter at least 1 Box QR code in the Box Verification Guard on the left.`);
+      return;
+    }
+
+    // 2. Validation: Courier Name
+    if (!deliveryData.courierName || !deliveryData.courierName.trim()) {
+      setDispatchError('⚠️ Courier Service Name is required. Please enter the transport / courier company name.');
+      return;
+    }
+
+    // 3. Validation: Vehicle Number
+    if (!deliveryData.vehicleNumber || !deliveryData.vehicleNumber.trim()) {
+      setDispatchError('⚠️ Vehicle Number is required (e.g. MH-12-AB-1234).');
+      return;
+    }
+
+    // 4. Validation: Driver Name
+    if (!deliveryData.driverName || !deliveryData.driverName.trim()) {
+      setDispatchError('⚠️ Driver Name is required.');
+      return;
+    }
+
+    // 5. Validation: Driver Mobile
+    if (!deliveryData.driverMobile || !deliveryData.driverMobile.trim()) {
+      setDispatchError('⚠️ Driver Mobile number is required for dispatch handover.');
       return;
     }
 
@@ -118,14 +155,24 @@ export default function DispatchVerify() {
         ...deliveryData
       });
 
-      if (res.data.success) {
-        alert(res.data.message);
-        navigate(`/delivery-statement?dispatchId=${res.data.dispatch._id}`);
+      if (res.data && res.data.success) {
+        setDispatchSuccess(res.data.message || 'Dispatch confirmed successfully!');
+        const dId = res.data.dispatch?._id || '';
+        setTimeout(() => {
+          if (dId) {
+            navigate(`/delivery-statement?dispatchId=${dId}`);
+          } else {
+            navigate(`/delivery-statement`);
+          }
+        }, 800);
         return;
+      } else {
+        setDispatchError(res.data?.message || 'Dispatch confirmation failed. Please check details.');
       }
     } catch (err) {
-      alert(`Dispatch Completed! ${verifiedBoxes.length} boxes verified & recorded.`);
-      navigate(`/delivery-statement`);
+      console.error('Dispatch confirmation error:', err);
+      const errMsg = err.response?.data?.message || err.message || 'Server error occurred while confirming dispatch.';
+      setDispatchError(`✖ Dispatch Failed: ${errMsg}`);
     } finally {
       setDispatching(false);
     }
@@ -403,10 +450,48 @@ export default function DispatchVerify() {
 
         {/* Courier & Driver Handover Form */}
         <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-4">
-          <h3 className="font-extrabold text-sm text-[#0F6E56] flex items-center gap-2">
-            <Truck className="w-4 h-4" />
-            <span>Courier & Transport Handover</span>
-          </h3>
+          <div className="flex items-center justify-between">
+            <h3 className="font-extrabold text-sm text-[#0F6E56] flex items-center gap-2">
+              <Truck className="w-4 h-4" />
+              <span>Courier & Transport Handover</span>
+            </h3>
+            <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full ${verifiedBoxes.length > 0 ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
+              {verifiedBoxes.length} Box{verifiedBoxes.length === 1 ? '' : 'es'} Ready
+            </span>
+          </div>
+
+          {/* Error Banner */}
+          {dispatchError && (
+            <div className="bg-red-50 border-2 border-red-300 rounded-xl p-3 text-xs text-red-800 flex items-start gap-2.5 animate-shake">
+              <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <span className="font-black block">Validation / Dispatch Error</span>
+                <span className="font-medium text-[11px]">{dispatchError}</span>
+              </div>
+              <button 
+                type="button" 
+                onClick={() => setDispatchError('')}
+                className="text-red-400 hover:text-red-700 font-bold text-sm px-1"
+              >
+                ✕
+              </button>
+            </div>
+          )}
+
+          {/* Success Banner */}
+          {dispatchSuccess && (
+            <div className="bg-emerald-50 border-2 border-emerald-300 rounded-xl p-3 text-xs text-emerald-800 flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span className="font-bold">{dispatchSuccess}</span>
+            </div>
+          )}
+
+          {verifiedBoxes.length === 0 && (
+            <div className="bg-amber-50/80 border border-amber-200 rounded-xl p-3 text-[11px] text-amber-800 flex items-center gap-2">
+              <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+              <span>Please scan & verify boxes for <strong>Invoice #{selectedInvoiceNo || 'N/A'}</strong> on the left to enable dispatch confirmation.</span>
+            </div>
+          )}
 
           <div className="space-y-3 text-xs">
             <div>
@@ -415,7 +500,11 @@ export default function DispatchVerify() {
                 type="text"
                 required
                 value={deliveryData.courierName}
-                onChange={(e) => setDeliveryData({ ...deliveryData, courierName: e.target.value })}
+                onChange={(e) => {
+                  setDispatchError('');
+                  setDeliveryData({ ...deliveryData, courierName: e.target.value });
+                }}
+                placeholder="e.g. VRL Logistics, DTDC, Direct Truck"
                 className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0F6E56]"
               />
             </div>
@@ -426,7 +515,11 @@ export default function DispatchVerify() {
                 type="text"
                 required
                 value={deliveryData.vehicleNumber}
-                onChange={(e) => setDeliveryData({ ...deliveryData, vehicleNumber: e.target.value })}
+                onChange={(e) => {
+                  setDispatchError('');
+                  setDeliveryData({ ...deliveryData, vehicleNumber: e.target.value });
+                }}
+                placeholder="e.g. MH-12-AB-8841"
                 className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono font-bold focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0F6E56]"
               />
             </div>
@@ -437,7 +530,11 @@ export default function DispatchVerify() {
                 type="text"
                 required
                 value={deliveryData.driverName}
-                onChange={(e) => setDeliveryData({ ...deliveryData, driverName: e.target.value })}
+                onChange={(e) => {
+                  setDispatchError('');
+                  setDeliveryData({ ...deliveryData, driverName: e.target.value });
+                }}
+                placeholder="e.g. Rajesh Kumar"
                 className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0F6E56]"
               />
             </div>
@@ -448,7 +545,11 @@ export default function DispatchVerify() {
                 type="text"
                 required
                 value={deliveryData.driverMobile}
-                onChange={(e) => setDeliveryData({ ...deliveryData, driverMobile: e.target.value })}
+                onChange={(e) => {
+                  setDispatchError('');
+                  setDeliveryData({ ...deliveryData, driverMobile: e.target.value });
+                }}
+                placeholder="e.g. 9876543210"
                 className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0F6E56]"
               />
             </div>
@@ -465,9 +566,14 @@ export default function DispatchVerify() {
           </div>
 
           <button
+            type="button"
             onClick={handleConfirmDispatch}
-            disabled={dispatching || verifiedBoxes.length === 0}
-            className="w-full bg-[#0F6E56] hover:bg-[#0B5442] text-white font-extrabold text-xs py-3 rounded-xl shadow-lg transition-colors flex items-center justify-center gap-2 mt-4"
+            disabled={dispatching}
+            className={`w-full font-extrabold text-xs py-3 rounded-xl shadow-lg transition-all flex items-center justify-center gap-2 mt-4 ${
+              verifiedBoxes.length === 0 
+                ? 'bg-slate-300 text-slate-600 hover:bg-slate-400 cursor-pointer' 
+                : 'bg-[#0F6E56] hover:bg-[#0B5442] text-white shadow-emerald-900/10'
+            }`}
           >
             <Send className="w-4 h-4" />
             <span>{dispatching ? 'Saving Dispatch...' : 'Confirm Dispatch & Generate Sheet'}</span>
