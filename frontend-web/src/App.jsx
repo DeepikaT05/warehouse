@@ -11,6 +11,7 @@ import QRPrintPage from './pages/QRPrintPage';
 import StockManagement from './pages/StockManagement';
 import ProductMaster from './pages/ProductMaster';
 import InvoiceUpload from './pages/InvoiceUpload';
+import BillHistory from './pages/BillHistory';
 import DealerMaster from './pages/DealerMaster';
 import DispatchVerify from './pages/DispatchVerify';
 import DeliveryStatement from './pages/DeliveryStatement';
@@ -61,6 +62,7 @@ function ProtectedLayout() {
             <Route path="/stock-picking/:id" element={<StockPicking />} />
             <Route path="/dealer-approval" element={<DealerApprovalTracker />} />
             <Route path="/invoices" element={<AdminRoute><InvoiceUpload /></AdminRoute>} />
+            <Route path="/bill-history" element={<BillHistory />} />
             <Route path="/dealers" element={<AdminRoute><DealerMaster /></AdminRoute>} />
             <Route path="/dispatch-verify" element={<DispatchVerify />} />
             <Route path="/delivery-statement" element={<DeliveryStatement />} />

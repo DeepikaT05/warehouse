@@ -122,6 +122,41 @@ export default function Sidebar() {
                 <span>Assign Bill (OCR Upload)</span>
               </NavLink>
 
+              <NavLink
+                to="/bill-history"
+                className={({ isActive }) =>
+                  `flex items-center gap-3 px-3.5 py-2.5 rounded-xl font-semibold text-xs transition-all ${
+                    isActive ? 'bg-[#0F6E56] text-white shadow-md' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                  }`
+                }
+              >
+                <FileText className="w-4 h-4 shrink-0 text-emerald-600" />
+                <span>Bill History</span>
+              </NavLink>
+
+              <NavLink
+                to="/dispatch-verify"
+                className={({ isActive }) =>
+                  `flex items-center gap-3 px-3.5 py-2.5 rounded-xl font-semibold text-xs transition-all ${
+                    isActive ? 'bg-[#0F6E56] text-white shadow-md' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                  }`
+                }
+              >
+                <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
+                <span>Dispatch Verification</span>
+              </NavLink>
+
+              <NavLink
+                to="/delivery-statement"
+                className={({ isActive }) =>
+                  `flex items-center gap-3 px-3.5 py-2.5 rounded-xl font-semibold text-xs transition-all ${
+                    isActive ? 'bg-[#0F6E56] text-white shadow-md' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                  }`
+                }
+              >
+                <Truck className="w-4 h-4 shrink-0 text-emerald-600" />
+                <span>Delivery Statements</span>
+              </NavLink>
 
               <NavLink
                 to="/history"
@@ -172,6 +207,18 @@ export default function Sidebar() {
               >
                 <FileSpreadsheet className="w-4 h-4 shrink-0 text-[#0F6E56]" />
                 <span>Assigned Bills & Stock Picking</span>
+              </NavLink>
+
+              <NavLink
+                to="/bill-history"
+                className={({ isActive }) =>
+                  `flex items-center gap-3 px-3.5 py-2.5 rounded-xl font-semibold text-xs transition-all ${
+                    isActive ? 'bg-[#0F6E56] text-white shadow-md' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                  }`
+                }
+              >
+                <FileText className="w-4 h-4 shrink-0 text-[#0F6E56]" />
+                <span>Bill History</span>
               </NavLink>
 
               <NavLink
