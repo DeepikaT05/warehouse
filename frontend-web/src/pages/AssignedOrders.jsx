@@ -133,13 +133,14 @@ export default function AssignedOrders() {
     }
   };
 
-  const handleStartPicking = async (orderId) => {
+  const handleStartPicking = async (order) => {
     try {
-      await api.post(`/user/orders/${orderId}/start-picking`);
-      navigate(`/stock-picking/${orderId}`);
-    } catch (err) {
-      navigate(`/stock-picking/${orderId}`);
-    }
+      if (order._id) {
+        await api.post(`/user/orders/${order._id}/start-picking`);
+      }
+    } catch (err) {}
+    const inv = order.invoiceNo || order._id;
+    navigate(`/dispatch-verify?invoiceNo=${inv}`);
   };
 
   const getStatusBadge = (orderStatus) => {
@@ -418,11 +419,11 @@ export default function AssignedOrders() {
                       </span>
                     ) : (
                       <button
-                        onClick={() => handleStartPicking(order._id)}
-                        className="bg-[#0F6E56] hover:bg-[#0c5946] text-white font-extrabold text-xs px-5 py-2.5 rounded-xl shadow-md transition-all flex items-center gap-2 animate-pulse"
+                        onClick={() => handleStartPicking(order)}
+                        className="bg-[#0F6E56] hover:bg-[#0c5946] text-white font-extrabold text-xs px-5 py-2.5 rounded-xl shadow-md transition-all flex items-center gap-2"
                       >
                         <Play className="w-4 h-4 fill-white" />
-                        <span>{order.orderStatus === 'new' || order.orderStatus === 'viewed' ? 'Pick Order (Start Scanning)' : 'Continue Picking Order'}</span>
+                        <span>▶ Start Picking & Scan QR</span>
                       </button>
                     )}
 

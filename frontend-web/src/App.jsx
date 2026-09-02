@@ -59,7 +59,7 @@ function ProtectedLayout() {
             <Route path="/stock" element={<AdminRoute><StockManagement /></AdminRoute>} />
             <Route path="/products" element={<AdminRoute><ProductMaster /></AdminRoute>} />
             <Route path="/assigned-orders" element={<AssignedOrders />} />
-            <Route path="/stock-picking/:id" element={<StockPicking />} />
+            <Route path="/stock-picking/:id" element={<DispatchVerify />} />
             <Route path="/dealer-approval" element={<DealerApprovalTracker />} />
             <Route path="/invoices" element={<AdminRoute><InvoiceUpload /></AdminRoute>} />
             <Route path="/bill-history" element={<BillHistory />} />

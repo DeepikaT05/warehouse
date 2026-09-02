@@ -34,8 +34,8 @@ export default function App() {
         <Stack.Screen name="Purchase" component={PurchaseScreen} options={{ title: 'Purchase Entry & Intake' }} />
         <Stack.Screen name="QRPrint" component={QRPrintScreen} options={{ title: 'QR Label Print Studio' }} />
         <Stack.Screen name="StockList" component={StockListScreen} options={{ title: 'Stock Inventory Matrix' }} />
-        <Stack.Screen name="AssignedOrders" component={AssignedOrdersScreen} options={{ title: 'Assigned Bills & Stock Picking' }} />
-        <Stack.Screen name="StockPicking" component={MobileStockPickingScreen} options={{ title: 'Scan Picking & Match' }} />
+        <Stack.Screen name="AssignedOrders" component={AssignedOrdersScreen} options={{ title: 'Assigned Bills & Picking' }} />
+        <Stack.Screen name="StockPicking" component={ScanVerifyScreen} options={{ title: 'Initial & Dispatch Scan Guard' }} />
         <Stack.Screen name="DealerMaster" component={DealerMasterScreen} options={{ title: 'Dealer Directory (View Only)' }} />
         <Stack.Screen name="ScanVerify" component={ScanVerifyScreen} options={{ title: 'Initial & Dispatch Scan Guard' }} />
         <Stack.Screen name="DeliveryStatement" component={DeliveryStatementScreen} options={{ title: 'Delivery Statements' }} />
