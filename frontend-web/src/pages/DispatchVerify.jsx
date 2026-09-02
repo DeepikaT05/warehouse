@@ -11,6 +11,8 @@ export default function DispatchVerify() {
   const [invoices, setInvoices] = useState([]);
   const [selectedInvoiceNo, setSelectedInvoiceNo] = useState(searchParams.get('invoiceNo') || '');
   const [activeInvoice, setActiveInvoice] = useState(null);
+  const [alreadyDispatchedBoxes, setAlreadyDispatchedBoxes] = useState([]);
+  const [existingDispatch, setExistingDispatch] = useState(null);
 
   const [scanQrInput, setScanQrInput] = useState('');
   const [verifiedBoxes, setVerifiedBoxes] = useState([]);
@@ -40,8 +42,33 @@ export default function DispatchVerify() {
     if (selectedInvoiceNo) {
       const found = invoices.find(i => i.invoiceNo === selectedInvoiceNo);
       setActiveInvoice(found || null);
+      fetchExistingDispatchesForInvoice(selectedInvoiceNo);
     }
   }, [selectedInvoiceNo, invoices]);
+
+  const fetchExistingDispatchesForInvoice = async (invNo) => {
+    try {
+      const res = await api.get('/dispatches');
+      if (res.data.success && res.data.dispatches) {
+        const found = res.data.dispatches.find(d => d.salesInvoiceNo === invNo);
+        if (found) {
+          setExistingDispatch(found);
+          const boxList = (found.scannedBoxQrIds || []).map(qr => ({
+            qrId: qr,
+            productName: activeInvoice?.items?.[0]?.productName || 'Verified Product',
+            batchNumber: activeInvoice?.items?.[0]?.batchNumber || 'Batch-2026',
+            status: 'dispatched'
+          }));
+          setAlreadyDispatchedBoxes(boxList);
+        } else {
+          setExistingDispatch(null);
+          setAlreadyDispatchedBoxes([]);
+        }
+      }
+    } catch (e) {
+      console.log('Error fetching existing dispatches:', e.message);
+    }
+  };
 
   const fetchInvoices = async () => {
     try {
@@ -265,11 +292,28 @@ export default function DispatchVerify() {
             </span>
           </div>
 
+          {existingDispatch && (
+            <div className="bg-emerald-50 border border-emerald-300 rounded-xl p-3.5 flex items-center justify-between text-xs text-emerald-900">
+              <div className="flex items-center gap-2">
+                <span className="font-extrabold text-[#0F6E56]">✓ DISPATCH STATEMENT ALREADY RECORDED:</span>
+                <span>Statement #{existingDispatch.dispatchNo} ({existingDispatch.scannedBoxQrIds?.length || 0} boxes dispatched)</span>
+              </div>
+              <button
+                onClick={() => navigate(`/delivery-statement?dispatchId=${existingDispatch._id}`)}
+                className="bg-[#0F6E56] text-white font-extrabold px-3 py-1.5 rounded-lg hover:bg-[#0c5946] transition-colors"
+              >
+                View Delivery Statement ➔
+              </button>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
             {activeInvoice.items.map((item, idx) => {
-              const scannedForThisProduct = verifiedBoxes.filter(
-                b => (b.productName || '').toLowerCase().trim() === (item.productName || '').toLowerCase().trim()
-              ).length;
+              const allBoxesForThisProduct = [
+                ...alreadyDispatchedBoxes.filter(b => (b.productName || '').toLowerCase().trim() === (item.productName || '').toLowerCase().trim()),
+                ...verifiedBoxes.filter(b => (b.productName || '').toLowerCase().trim() === (item.productName || '').toLowerCase().trim())
+              ];
+              const scannedForThisProduct = allBoxesForThisProduct.length;
               const isComplete = scannedForThisProduct >= item.quantity;
               const progressPct = Math.min(100, Math.round((scannedForThisProduct / (item.quantity || 1)) * 100));
 
@@ -290,7 +334,7 @@ export default function DispatchVerify() {
                         {item.productName}
                       </span>
                       <span className="text-[11px] font-semibold text-slate-500">
-                        Packing: {item.weight || item.packingSize || '500ml'}
+                        Batch: <span className="font-bold text-[#0F6E56]">{item.batchNumber || 'Any Batch'}</span> | Packing: {item.weight || item.packingSize || '1 kg'}
                       </span>
                     </div>
                     <span
@@ -318,7 +362,7 @@ export default function DispatchVerify() {
                     </div>
                     <div className="flex justify-between items-center text-[10px] font-bold text-slate-500 mt-1">
                       <span>Progress</span>
-                      <span>{progressPct}% ({scannedForThisProduct}/{item.quantity} scanned)</span>
+                      <span>{progressPct}% ({scannedForThisProduct}/{item.quantity} verified)</span>
                     </div>
                   </div>
                 </div>

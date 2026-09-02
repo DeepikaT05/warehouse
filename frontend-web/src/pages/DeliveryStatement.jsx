@@ -279,35 +279,48 @@ export default function DeliveryStatement() {
               </div>
 
               {/* Statement Sheet Document (Print Optimized) */}
-              <div className="border-2 border-slate-200 rounded-2xl p-6 bg-slate-50 space-y-6 font-sans">
+              <div id="printable-statement-area" className="border-2 border-slate-200 rounded-2xl p-6 bg-white space-y-6 font-sans shadow-sm">
                 {/* Statement Header */}
-                <div className="bg-[#0F6E56] text-white p-4 rounded-xl flex items-center justify-between">
+                <div className="bg-[#0F6E56] text-white p-5 rounded-xl flex items-center justify-between">
                   <div>
-                    <h3 className="font-extrabold text-base tracking-tight">VANIKI CROP SCIENCE</h3>
-                    <p className="text-[10px] text-emerald-100 font-medium">OFFICIAL WAREHOUSE DELIVERY STATEMENT & HANDOVER SHEET</p>
+                    <h3 className="font-extrabold text-lg tracking-tight">VANIKI CROP SCIENCE</h3>
+                    <p className="text-[11px] text-emerald-100 font-medium">OFFICIAL WAREHOUSE DELIVERY STATEMENT & HANDOVER SHEET</p>
                   </div>
                   <div className="text-right text-xs">
-                    <p className="font-mono font-bold">DSP #{selectedDispatch.dispatchNo}</p>
+                    <p className="font-mono font-bold text-sm">DSP #{selectedDispatch.dispatchNo}</p>
+                    <p className="text-[11px] text-emerald-200 font-medium">Invoice: #{selectedDispatch.salesInvoiceNo}</p>
                     <p className="text-[10px] text-emerald-200">{new Date(selectedDispatch.dispatchDate).toLocaleDateString()}</p>
                   </div>
                 </div>
 
                 {/* Details Grid */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs bg-white p-4 rounded-xl border border-slate-200">
-                  <div className="space-y-1">
-                    <h4 className="font-bold text-[#0F6E56] uppercase text-[10px] border-b pb-1">Dealer & Destination</h4>
-                    <p className="font-bold text-slate-900">{selectedDispatch.dealerId?.dealerName}</p>
-                    <p className="text-slate-600">{selectedDispatch.dealerId?.garageName}</p>
-                    <p className="text-slate-500">{selectedDispatch.dealerId?.address}, {selectedDispatch.dealerId?.city}</p>
-                    <p className="text-slate-500 font-mono">GST: {selectedDispatch.dealerId?.gstNumber || 'N/A'}</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5 text-xs bg-slate-50 p-5 rounded-xl border border-slate-200">
+                  <div className="space-y-1.5">
+                    <h4 className="font-black text-[#0F6E56] uppercase text-[11px] border-b border-slate-200 pb-1 flex items-center gap-1">
+                      <span>DEALER & DESTINATION</span>
+                    </h4>
+                    <p className="font-extrabold text-sm text-slate-900">{selectedDispatch.dealerId?.dealerName || selectedDispatch.dealerId?.firmName || 'N/A'}</p>
+                    {selectedDispatch.dealerId?.garageName && (
+                      <p className="text-xs font-bold text-[#0F6E56]">Store/Branch: {selectedDispatch.dealerId?.garageName}</p>
+                    )}
+                    <p className="text-slate-700 font-medium leading-relaxed">
+                      📍 {[selectedDispatch.dealerId?.address, selectedDispatch.dealerId?.city, selectedDispatch.dealerId?.state, selectedDispatch.dealerId?.pincode].filter(Boolean).join(', ') || 'Address on file'}
+                    </p>
+                    {selectedDispatch.dealerId?.phone && (
+                      <p className="text-slate-600 font-medium">Phone: <span className="font-bold text-slate-800">{selectedDispatch.dealerId.phone}</span></p>
+                    )}
+                    <p className="text-slate-700 font-mono font-bold">
+                      GSTIN: <span className="text-slate-900">{selectedDispatch.dealerId?.gstNumber || 'N/A'}</span>
+                    </p>
                   </div>
 
-                  <div className="space-y-1">
-                    <h4 className="font-bold text-[#0F6E56] uppercase text-[10px] border-b pb-1">Courier & Vehicle Info</h4>
-                    <p className="font-semibold text-slate-800">Courier: {selectedDispatch.courierName}</p>
-                    <p className="font-mono font-bold text-slate-900">Vehicle: {selectedDispatch.vehicleNumber}</p>
-                    <p className="text-slate-600">Driver: {selectedDispatch.driverName} ({selectedDispatch.driverMobile})</p>
-                    <p className="text-slate-600">Verified By: {selectedDispatch.verifiedBy}</p>
+                  <div className="space-y-1.5">
+                    <h4 className="font-black text-[#0F6E56] uppercase text-[11px] border-b border-slate-200 pb-1">COURIER & VEHICLE INFO</h4>
+                    <p className="font-bold text-slate-800">Courier: <span className="text-slate-900 font-black">{selectedDispatch.courierName}</span></p>
+                    <p className="font-mono font-black text-slate-900 text-xs">Vehicle No: {selectedDispatch.vehicleNumber}</p>
+                    <p className="text-slate-700 font-medium">Driver: <span className="font-bold text-slate-900">{selectedDispatch.driverName}</span> ({selectedDispatch.driverMobile})</p>
+                    <p className="text-slate-600 font-medium">Verified By: <span className="font-bold text-slate-800">{selectedDispatch.verifiedBy || 'Warehouse Team'}</span></p>
+                    <p className="text-slate-600 font-medium">Delivery Date: {new Date(selectedDispatch.deliveryDate || selectedDispatch.dispatchDate).toLocaleDateString()}</p>
                   </div>
                 </div>
 

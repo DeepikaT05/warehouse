@@ -16,19 +16,28 @@
   }
 }
 
-/* Custom Print Styles for QR Thermal Stickers */
+/* Custom Print Styles for QR Thermal Stickers and Delivery Statements */
 @media print {
+  body {
+    background-color: #FFFFFF !important;
+  }
   body * {
     visibility: hidden;
   }
-  #printable-sticker-area, #printable-sticker-area * {
-    visibility: visible;
+  #printable-sticker-area, #printable-sticker-area *,
+  #printable-statement-area, #printable-statement-area * {
+    visibility: visible !important;
   }
-  #printable-sticker-area {
+  #printable-sticker-area,
+  #printable-statement-area {
     position: absolute;
     left: 0;
     top: 0;
-    width: 100%;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 12px !important;
+    border: none !important;
+    background: #FFFFFF !important;
   }
   .no-print {
     display: none !important;

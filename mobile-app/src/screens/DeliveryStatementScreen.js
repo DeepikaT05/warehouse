@@ -96,13 +96,29 @@ export default function DeliveryStatementScreen() {
               </View>
 
               <Text style={styles.label}>Invoice Number</Text>
-              <Text style={styles.val}>{item.salesInvoiceNo}</Text>
+              <Text style={styles.val}>#{item.salesInvoiceNo}</Text>
 
-              <Text style={styles.label}>Dealer & Garage</Text>
-              <Text style={styles.val}>{item.dealerId?.firmName || item.dealerId?.dealerName || 'N/A'}</Text>
+              <Text style={styles.label}>Dealer & Delivery Destination</Text>
+              <Text style={styles.val}>{item.dealerId?.dealerName || item.dealerId?.firmName || 'N/A'}</Text>
+              {item.dealerId?.garageName ? (
+                <Text style={styles.subVal}>Branch / Store: <Text style={{ fontWeight: '800', color: '#0F6E56' }}>{item.dealerId.garageName}</Text></Text>
+              ) : null}
+              {item.dealerId?.address || item.dealerId?.city ? (
+                <Text style={styles.subVal}>
+                  📍 {[item.dealerId?.address, item.dealerId?.city, item.dealerId?.state, item.dealerId?.pincode].filter(Boolean).join(', ')}
+                </Text>
+              ) : null}
+              {item.dealerId?.phone ? (
+                <Text style={styles.subVal}>📞 Phone: {item.dealerId.phone}</Text>
+              ) : null}
+              {item.dealerId?.gstNumber ? (
+                <Text style={styles.subVal}>GSTIN: <Text style={{ fontFamily: 'monospace', fontWeight: '800' }}>{item.dealerId.gstNumber}</Text></Text>
+              ) : null}
 
-              <Text style={styles.label}>Logistics & Driver</Text>
-              <Text style={styles.val}>{item.courierName} | {item.vehicleNumber} ({item.driverName})</Text>
+              <Text style={styles.label}>Logistics & Courier Info</Text>
+              <Text style={styles.val}>{item.courierName} | Vehicle: {item.vehicleNumber}</Text>
+              <Text style={styles.subVal}>Driver: {item.driverName} ({item.driverMobile})</Text>
+              <Text style={styles.subVal}>Date: {new Date(item.dispatchDate || Date.now()).toLocaleDateString()}</Text>
 
               <Text style={styles.label}>Verified Dispatched Boxes ({item.scannedBoxQrIds?.length || 0})</Text>
               <View style={styles.boxGrid}>
@@ -110,6 +126,14 @@ export default function DeliveryStatementScreen() {
                   <Text key={idx} style={styles.boxBadge}>{qr}</Text>
                 ))}
               </View>
+
+              {/* PDF DOWNLOAD BUTTON */}
+              <TouchableOpacity
+                style={styles.pdfBtn}
+                onPress={() => Linking.openURL(`https://warehouse.vanikicrop.com/api/dispatches/${item._id}/pdf`)}
+              >
+                <Text style={styles.pdfBtnText}>📄 Download Official Statement PDF</Text>
+              </TouchableOpacity>
 
               {/* DISPATCHED GOODS PHOTO PROOF SECTION */}
               <View style={styles.photoSection}>
@@ -179,6 +203,9 @@ const styles = StyleSheet.create({
   stmtNo: { color: COLORS.bgLight, fontSize: 11, fontWeight: '700', marginTop: 2 },
   label: { fontSize: 11, fontWeight: '700', color: COLORS.slate500, marginTop: 10 },
   val: { fontSize: 13, fontWeight: '800', color: COLORS.slate900, marginTop: 2 },
+  subVal: { fontSize: 11, color: '#475569', marginTop: 2, fontWeight: '600' },
+  pdfBtn: { backgroundColor: '#F8FAFC', borderWidth: 1.5, borderColor: '#0F6E56', borderRadius: 12, paddingVertical: 11, alignItems: 'center', marginTop: 12 },
+  pdfBtnText: { color: '#0F6E56', fontWeight: '900', fontSize: 12 },
   boxGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 6 },
   boxBadge: { backgroundColor: COLORS.bgLight, color: COLORS.primary, fontWeight: '900', fontSize: 11, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, fontFamily: 'monospace' },
   photoSection: { marginTop: 14, backgroundColor: '#F1F5F9', padding: 12, borderRadius: 12 },
