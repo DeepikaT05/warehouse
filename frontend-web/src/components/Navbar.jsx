@@ -13,9 +13,11 @@ export default function Navbar() {
       <div className="flex items-center justify-between px-6 py-3">
         {/* Brand Title */}
         <div className="flex items-center gap-3 cursor-pointer" onClick={() => navigate('/')}>
-          <div className="bg-[#0F6E56] text-white p-2.5 rounded-xl shadow-md flex items-center justify-center">
-            <QrCode className="w-6 h-6" />
-          </div>
+          <img 
+            src="/logo.png" 
+            alt="Vaniki Logo" 
+            className="w-10 h-10 rounded-xl object-contain shadow-md bg-white border border-emerald-100 p-0.5" 
+          />
           <div>
             <h1 className="font-extrabold text-lg text-slate-900 tracking-tight leading-tight">
               VANIKI <span className="text-[#0F6E56]">STOCK TRACE</span>

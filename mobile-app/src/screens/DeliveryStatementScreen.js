@@ -2,11 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity, Linking, ActivityIndicator, Image, Modal, Alert } from 'react-native';
 import { COLORS } from '../theme';
 import mobileApi from '../services/api';
+import PhotoCaptureModal from '../components/PhotoCaptureModal';
 
 export default function DeliveryStatementScreen() {
   const [dispatches, setDispatches] = useState([]);
   const [loading, setLoading] = useState(true);
   const [viewPhotoUrl, setViewPhotoUrl] = useState(null);
+  const [activeDispatchForPhoto, setActiveDispatchForPhoto] = useState(null);
+  const [photoModalVisible, setPhotoModalVisible] = useState(false);
 
   useEffect(() => {
     fetchDispatches();
@@ -30,35 +33,29 @@ export default function DeliveryStatementScreen() {
     Linking.openURL(`https://wa.me/?text=${encodeURIComponent(text)}`);
   };
 
-  // Mock Camera Photo Snap for loaded goods proof
-  const handleCaptureGoodsPhoto = async (item) => {
-    Alert.alert(
-      '📷 Capture Dispatched Goods Photo',
-      'Take a photo of loaded boxes on the vehicle/truck before dispatching.',
-      [
-        {
-          text: 'Use Camera (Simulated Photo)',
-          onPress: async () => {
-            // Generate proof photo placeholder string
-            const samplePhotoUrl = 'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&w=600&q=80';
-            try {
-              const res = await mobileApi.post('/dispatches/upload-photo', {
-                dispatchId: item._id,
-                salesInvoiceNo: item.salesInvoiceNo,
-                photoUrl: samplePhotoUrl
-              });
-              if (res.data.success) {
-                Alert.alert('✅ Photo Saved!', 'Dispatched goods photo proof stored successfully.');
-                fetchDispatches();
-              }
-            } catch (err) {
-              Alert.alert('Upload Error', 'Could not save photo proof.');
-            }
-          }
-        },
-        { text: 'Cancel', style: 'cancel' }
-      ]
-    );
+  const handleCaptureGoodsPhoto = (item) => {
+    setActiveDispatchForPhoto(item);
+    setPhotoModalVisible(true);
+  };
+
+  const handleSaveCapturedPhoto = async (photoData) => {
+    if (!activeDispatchForPhoto) return;
+    try {
+      const res = await mobileApi.post('/dispatches/upload-photo', {
+        dispatchId: activeDispatchForPhoto._id,
+        salesInvoiceNo: activeDispatchForPhoto.salesInvoiceNo,
+        photoUrl: photoData
+      });
+      if (res.data.success) {
+        Alert.alert('✅ Photo Saved!', 'Dispatched goods photo proof stored successfully.');
+        fetchDispatches();
+      }
+    } catch (err) {
+      Alert.alert('Upload Error', 'Could not save photo proof.');
+    } finally {
+      setPhotoModalVisible(false);
+      setActiveDispatchForPhoto(null);
+    }
   };
 
   return (
@@ -126,6 +123,17 @@ export default function DeliveryStatementScreen() {
           ))
         )}
       </ScrollView>
+
+      {/* PHOTO CAPTURE MODAL */}
+      <PhotoCaptureModal
+        visible={photoModalVisible}
+        onClose={() => {
+          setPhotoModalVisible(false);
+          setActiveDispatchForPhoto(null);
+        }}
+        title="📷 Dispatched Goods Photo Proof"
+        onPhotoCaptured={handleSaveCapturedPhoto}
+      />
 
       {/* FULL PHOTO VIEW MODAL */}
       {viewPhotoUrl && (

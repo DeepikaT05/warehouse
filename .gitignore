@@ -15,10 +15,12 @@ build/
 *.aab
 *.ipa
 
-# Environment & Logs
+# Environment & Keys
 .env
-.env.local
-.env.*.local
+.env*
+**/.env
+**/.env*
+*.env
 *.log
 
 # Editor & OS files

@@ -2,6 +2,7 @@
   "expo": {
     "name": "Vaniki Stock Trace Scanner",
     "slug": "vaniki-stock-trace-mobile",
+    "owner": "bishnusahu",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -21,7 +22,9 @@
         "backgroundColor": "#0F6E56"
       },
       "permissions": [
-        "CAMERA"
+        "CAMERA",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
       ]
     },
     "web": {
@@ -34,6 +37,11 @@
           "cameraPermission": "Allow Vaniki Stock Trace to access your camera to scan inventory box QR codes."
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "20871525-826f-43c8-bee8-ce0377ad0b6d"
+      }
+    }
   }
 }

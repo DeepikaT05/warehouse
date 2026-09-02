@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, SafeAreaView } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, SafeAreaView, Image } from 'react-native';
 import { COLORS } from '../theme';
 import mobileApi, { setAuthToken } from '../services/api';
 
@@ -10,8 +10,12 @@ export default function LoginScreen({ navigation }) {
   const [loading, setLoading] = useState(false);
 
   const handleLoginWithCreds = async (u, p) => {
-    const targetUser = u || username;
-    const targetPass = p || password;
+    const targetUser = (u || username).trim();
+    const targetPass = (p || password).trim();
+    if (!targetUser || !targetPass) {
+      alert('Please enter username and password');
+      return;
+    }
     setLoading(true);
     try {
       const res = await mobileApi.post('/auth/login', { username: targetUser, password: targetPass });
@@ -19,18 +23,12 @@ export default function LoginScreen({ navigation }) {
         setAuthToken(res.data.token);
         navigation.replace('Dashboard', { user: res.data.user });
         return;
+      } else {
+        alert(res.data.message || 'Login failed');
       }
     } catch (err) {
-      console.log('Mobile login fallback:', err.message);
-      setAuthToken('mobile_wms_session_token');
-      const isAdm = targetUser.toLowerCase().includes('admin');
-      navigation.replace('Dashboard', { 
-        user: { 
-          name: isAdm ? 'System Admin' : 'Warehouse Worker', 
-          role: isAdm ? 'admin' : 'user', 
-          username: targetUser || 'warehouse1' 
-        } 
-      });
+      const errMsg = err.response?.data?.message || err.message || 'Connection error. Please check server connectivity.';
+      alert('Login Error: ' + errMsg);
     } finally {
       setLoading(false);
     }
@@ -39,9 +37,11 @@ export default function LoginScreen({ navigation }) {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.card}>
-        <View style={styles.logoBadge}>
-          <Text style={styles.logoText}>VNK</Text>
-        </View>
+        <Image 
+          source={require('../../assets/logo.png')} 
+          style={{ width: 80, height: 80, borderRadius: 20, marginBottom: 12 }} 
+          resizeMode="contain"
+        />
         <Text style={styles.title}>VANIKI STOCK TRACE</Text>
         <Text style={styles.subtitle}>Mobile WMS & QR Scanner App</Text>
 

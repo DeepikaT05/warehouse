@@ -2,23 +2,9 @@ import axios from 'axios';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 
-// Dynamic backend URL detector for mobile & web preview
+// Production backend URL connected to server
 const getBackendUrl = () => {
-  if (Platform.OS === 'web') {
-    return 'http://localhost:5000/api';
-  }
-  try {
-    const hostUri = Constants.expoConfig?.hostUri || Constants.manifest?.debuggerHost || '';
-    if (hostUri) {
-      const ip = hostUri.split(':')[0];
-      if (ip && ip !== '127.0.0.1') {
-        return `http://${ip}:5000/api`;
-      }
-    }
-  } catch (e) {
-    // fallback
-  }
-  return 'http://localhost:5000/api';
+  return 'https://warehouse.vanikicrop.com/api';
 };
 
 const API_BASE_URL = getBackendUrl();

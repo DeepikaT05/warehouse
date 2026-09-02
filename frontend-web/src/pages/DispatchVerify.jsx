@@ -171,14 +171,17 @@ export default function DispatchVerify() {
           <select
             value={selectedInvoiceNo}
             onChange={(e) => setSelectedInvoiceNo(e.target.value)}
-            className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-[#0F6E56] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0F6E56]"
+            className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-[#0F6E56] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0F6E56] max-w-md"
           >
-            <option value="">Select Invoice...</option>
-            {invoices.map(inv => (
-              <option key={inv._id} value={inv.invoiceNo}>
-                #{inv.invoiceNo} - {inv.dealerName} ({inv.garageName})
-              </option>
-            ))}
+            <option value="">Select Invoice (or leave empty for General Stock Scan)...</option>
+            {invoices.map(inv => {
+              const productSummary = (inv.items || []).map(i => `${i.productName} (${i.quantity} boxes)`).join(', ') || 'General Products';
+              return (
+                <option key={inv._id} value={inv.invoiceNo}>
+                  #{inv.invoiceNo} - {inv.dealerName || 'Dealer'} | Products: {productSummary}
+                </option>
+              );
+            })}
           </select>
         </div>
 
@@ -190,15 +193,93 @@ export default function DispatchVerify() {
             </div>
             <div>
               <span className="text-[10px] text-slate-400 font-bold uppercase">Garage</span>
-              <p className="font-bold text-slate-700">{activeInvoice.garageName}</p>
+              <p className="font-bold text-slate-700">{activeInvoice.garageName || 'Main Store'}</p>
             </div>
             <div>
-              <span className="text-[10px] text-slate-400 font-bold uppercase">Scanned Count</span>
+              <span className="text-[10px] text-slate-400 font-bold uppercase">Total Scanned</span>
               <p className="font-bold text-slate-900">{verifiedBoxes.length} Boxes</p>
             </div>
           </div>
         )}
       </div>
+
+      {/* Ordered Products to Dispatch Card */}
+      {activeInvoice && activeInvoice.items && activeInvoice.items.length > 0 && (
+        <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-3">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
+            <div className="flex items-center gap-2">
+              <span className="text-lg">📦</span>
+              <h2 className="text-xs font-extrabold text-slate-800 uppercase tracking-wider">
+                Order Bill Products To Dispatch ({activeInvoice.items.length} Products)
+              </h2>
+            </div>
+            <span className="text-[11px] font-bold text-slate-500">
+              Invoice #{activeInvoice.invoiceNo}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {activeInvoice.items.map((item, idx) => {
+              const scannedForThisProduct = verifiedBoxes.filter(
+                b => (b.productName || '').toLowerCase().trim() === (item.productName || '').toLowerCase().trim()
+              ).length;
+              const isComplete = scannedForThisProduct >= item.quantity;
+              const progressPct = Math.min(100, Math.round((scannedForThisProduct / (item.quantity || 1)) * 100));
+
+              return (
+                <div
+                  key={idx}
+                  className={`p-3.5 rounded-xl border transition-all ${
+                    isComplete
+                      ? 'bg-emerald-50/80 border-emerald-300 ring-1 ring-emerald-300'
+                      : scannedForThisProduct > 0
+                      ? 'bg-amber-50/60 border-amber-200'
+                      : 'bg-slate-50/80 border-slate-200'
+                  }`}
+                >
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <span className="text-xs font-black text-slate-900 capitalize block">
+                        {item.productName}
+                      </span>
+                      <span className="text-[11px] font-semibold text-slate-500">
+                        Packing: {item.weight || item.packingSize || '500ml'}
+                      </span>
+                    </div>
+                    <span
+                      className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${
+                        isComplete
+                          ? 'bg-emerald-200 text-emerald-900'
+                          : scannedForThisProduct > 0
+                          ? 'bg-amber-200 text-amber-900'
+                          : 'bg-slate-200 text-slate-700'
+                      }`}
+                    >
+                      {isComplete ? '✓ COMPLETED' : `${scannedForThisProduct} / ${item.quantity} BOXES`}
+                    </span>
+                  </div>
+
+                  {/* Progress bar */}
+                  <div className="mt-2.5">
+                    <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full transition-all duration-300 ${
+                          isComplete ? 'bg-[#0F6E56]' : 'bg-amber-500'
+                        }`}
+                        style={{ width: `${progressPct}%` }}
+                      />
+                    </div>
+                    <div className="flex justify-between items-center text-[10px] font-bold text-slate-500 mt-1">
+                      <span>Progress</span>
+                      <span>{progressPct}% ({scannedForThisProduct}/{item.quantity} scanned)</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Manual / Barcode Gun Input */}
       <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">

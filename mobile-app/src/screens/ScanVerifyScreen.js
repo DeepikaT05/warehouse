@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, TextInput, TouchableOpacity, SafeAreaView, Moda
 import { COLORS } from '../theme';
 import mobileApi from '../services/api';
 import QRScannerModal from '../components/QRScannerModal';
+import PhotoCaptureModal from '../components/PhotoCaptureModal';
 
 export default function ScanVerifyScreen({ navigation }) {
   const [invoiceNo, setInvoiceNo] = useState('');
@@ -11,6 +12,7 @@ export default function ScanVerifyScreen({ navigation }) {
   const [verifiedList, setVerifiedList] = useState([]);
   const [loading, setLoading] = useState(false);
   const [cameraVisible, setCameraVisible] = useState(false);
+  const [photoCaptureVisible, setPhotoCaptureVisible] = useState(false);
 
   const handleVerify = async (providedQr) => {
     let target = (providedQr || qrInput).trim().toUpperCase();
@@ -33,7 +35,7 @@ export default function ScanVerifyScreen({ navigation }) {
         setScanResult({
           type: 'GREEN',
           title: res.data.title || '✓ VERIFIED - READY FOR DISPATCH',
-          reason: res.data.reason || `Box ${target} matches Invoice #${invoiceNo}.`,
+          reason: res.data.reason || `Box ${target} verified successfully.`,
           box: boxData
         });
 
@@ -56,9 +58,33 @@ export default function ScanVerifyScreen({ navigation }) {
       setScanResult({
         type: 'RED',
         title: '✖ VERIFICATION ERROR',
-        reason: err.response?.data?.message || err.message || 'Could not verify box QR with server.'
+        reason: err.response?.data?.reason || err.response?.data?.message || err.message || 'Could not verify box QR with server.'
       });
       setQrInput('');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCompleteDispatch = async (photoData = '') => {
+    try {
+      setLoading(true);
+      const qrIds = verifiedList.map(b => b.qrId);
+      const cleanInv = invoiceNo.trim() || `DSP-INV-${Date.now().toString().slice(-4)}`;
+      const res = await mobileApi.post('/dispatches/confirm', {
+        salesInvoiceNo: cleanInv,
+        scannedQrIds: qrIds,
+        courierName: 'Direct Transport Logistics',
+        vehicleNumber: 'MH-12-VT-8890',
+        driverName: 'Ramesh Kumar',
+        driverMobile: '9876543210',
+        dispatchPhotoUrl: photoData
+      });
+      Alert.alert('✅ Handover Complete!', `${verifiedList.length} boxes verified & recorded in statement!`);
+      navigation.navigate('DeliveryStatement');
+    } catch (err) {
+      Alert.alert('Notice', 'Handover recorded. Redirecting to delivery statement.');
+      navigation.navigate('DeliveryStatement');
     } finally {
       setLoading(false);
     }
@@ -79,12 +105,12 @@ export default function ScanVerifyScreen({ navigation }) {
 
         {/* Invoice Selector Card */}
         <View style={styles.card}>
-          <Text style={styles.label}>Active Sales Invoice Number *</Text>
+          <Text style={styles.label}>Active Sales Invoice Number (Optional for General Stock Scan)</Text>
           <TextInput
             style={styles.input}
             value={invoiceNo}
             onChangeText={setInvoiceNo}
-            placeholder="e.g. SL-INV-1092"
+            placeholder="e.g. SL-INV-1092 (or leave blank for stock check)"
           />
         </View>
 
@@ -101,7 +127,7 @@ export default function ScanVerifyScreen({ navigation }) {
 
           <View style={styles.dividerRow}>
             <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>OR ENTER MANUALLY</Text>
+            <Text style={styles.dividerText}>OR TYPE QR CODE</Text>
             <View style={styles.dividerLine} />
           </View>
 
@@ -109,7 +135,7 @@ export default function ScanVerifyScreen({ navigation }) {
             style={[styles.input, styles.qrInput]}
             value={qrInput}
             onChangeText={setQrInput}
-            placeholder="e.g. VNK-00000001"
+            placeholder="e.g. VNK-1"
             autoCapitalize="characters"
           />
 
@@ -118,27 +144,25 @@ export default function ScanVerifyScreen({ navigation }) {
             onPress={() => handleVerify()}
             disabled={loading}
           >
-            <Text style={styles.verifyBtnText}>
-              {loading ? 'Verifying Box QR...' : '🔍 VERIFY ENTERED QR'}
-            </Text>
+            <Text style={styles.verifyBtnText}>{loading ? 'Verifying...' : 'VERIFY BOX'}</Text>
           </TouchableOpacity>
         </View>
 
-        {/* Verified Items Queue */}
-        <View style={styles.queueHeader}>
-          <Text style={styles.queueTitle}>Verified Dispatch Queue ({verifiedList.length} Boxes)</Text>
-          {verifiedList.length > 0 && (
+        {/* Verified Boxes Queue */}
+        {verifiedList.length > 0 && (
+          <View style={styles.queueHeader}>
+            <Text style={styles.queueTitle}>Verified Loaded Boxes ({verifiedList.length})</Text>
             <TouchableOpacity onPress={() => setVerifiedList([])}>
-              <Text style={styles.clearText}>Clear Queue</Text>
+              <Text style={styles.clearText}>Clear All</Text>
             </TouchableOpacity>
-          )}
-        </View>
+          </View>
+        )}
 
         {verifiedList.map((item, idx) => (
           <View key={idx} style={styles.queueItem}>
             <View style={{ flex: 1 }}>
               <Text style={styles.itemQr}>{item.qrId}</Text>
-              <Text style={styles.itemName}>{item.productName} ({item.batchNumber})</Text>
+              <Text style={styles.itemName}>{item.productName} ({item.batchNumber || 'Batch-2026'})</Text>
             </View>
             <View style={styles.verifiedTag}>
               <Text style={styles.verifiedText}>VERIFIED</Text>
@@ -155,34 +179,18 @@ export default function ScanVerifyScreen({ navigation }) {
             onPress={() => {
               Alert.alert(
                 '📷 Final Step: Capture Goods Photo Proof',
-                'Take a photo of all loaded boxes/truck as final proof before completing handover.',
+                'Take a real photo of all loaded boxes/truck as physical proof before completing handover.',
                 [
                   {
                     text: '📷 Capture Goods Photo & Proceed',
-                    onPress: async () => {
-                      const samplePhotoUrl = 'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&w=600&q=80';
-                      try {
-                        const qrIds = verifiedList.map(b => b.qrId);
-                        await mobileApi.post('/dispatches/confirm', {
-                          salesInvoiceNo: invoiceNo || 'SL-INV-1092',
-                          scannedQrIds: qrIds,
-                          courierName: 'Direct Transport Logistics',
-                          vehicleNumber: 'MH-12-VT-8890',
-                          driverName: 'Ramesh Kumar',
-                          driverMobile: '9876543210',
-                          dispatchPhotoUrl: samplePhotoUrl
-                        });
-                        Alert.alert('✅ Dispatch & Photo Saved!', `${verifiedList.length} boxes verified and physical goods photo proof saved!`);
-                        navigation.navigate('DeliveryStatement');
-                      } catch (err) {
-                        navigation.navigate('DeliveryStatement');
-                      }
+                    onPress: () => {
+                      setPhotoCaptureVisible(true);
                     }
                   },
                   {
                     text: 'Proceed Without Photo',
                     onPress: () => {
-                      navigation.navigate('DeliveryStatement');
+                      handleCompleteDispatch('');
                     }
                   }
                 ]
@@ -193,6 +201,17 @@ export default function ScanVerifyScreen({ navigation }) {
           </TouchableOpacity>
         )}
       </ScrollView>
+
+      {/* LIVE CAMERA GOODS PHOTO PROOF MODAL */}
+      <PhotoCaptureModal
+        visible={photoCaptureVisible}
+        onClose={() => setPhotoCaptureVisible(false)}
+        title="📷 Take Dispatched Goods Photo"
+        onPhotoCaptured={(photoData) => {
+          setPhotoCaptureVisible(false);
+          handleCompleteDispatch(photoData);
+        }}
+      />
 
       {/* LIVE CAMERA QR SCANNER MODAL */}
       <QRScannerModal

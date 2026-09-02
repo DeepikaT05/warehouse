@@ -194,15 +194,27 @@ const getPurchases = async (req, res) => {
   }
 };
 
-const getPurchaseById = async (req, res) => {
+const { extractPurchaseBillWithGemini } = require('../utils/geminiOcrService');
+
+const extractPurchaseOcr = async (req, res) => {
   try {
-    const purchase = await Purchase.findById(req.params.id);
-    if (!purchase) return res.status(404).json({ success: false, message: 'Purchase record not found' });
-    const boxes = await StockBox.find({ purchaseId: purchase._id });
-    return res.json({ success: true, purchase, boxes });
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ success: false, message: 'Please upload an invoice file (PDF, JPG, PNG).' });
+    }
+
+    const ocrResult = await extractPurchaseBillWithGemini(file.buffer, file.mimetype, file.originalname);
+    return res.json({
+      success: true,
+      message: `Extracted purchase bill details successfully using ${ocrResult.modelUsed}!`,
+      ocrData: ocrResult.ocrData,
+      modelUsed: ocrResult.modelUsed
+    });
   } catch (err) {
+    console.error('Gemini Purchase OCR Error:', err);
     return res.status(500).json({ success: false, message: err.message });
   }
 };
 
-module.exports = { createPurchase, getPurchases, getPurchaseById };
+module.exports = { createPurchase, getPurchases, getPurchaseById, extractPurchaseOcr };
+

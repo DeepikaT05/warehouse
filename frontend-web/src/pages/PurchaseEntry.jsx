@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import api from '../utils/api';
 import { useNavigate } from 'react-router-dom';
-import { PackagePlus, Upload, CheckCircle, QrCode, FileText, Plus, Trash2, Layers } from 'lucide-react';
+import { PackagePlus, Upload, CheckCircle, QrCode, FileText, Plus, Trash2, Layers, Sparkles, Loader2 } from 'lucide-react';
 
 export default function PurchaseEntry() {
   const navigate = useNavigate();
@@ -31,6 +31,8 @@ export default function PurchaseEntry() {
   ]);
 
   const [loading, setLoading] = useState(false);
+  const [ocrLoading, setOcrLoading] = useState(false);
+  const [ocrSuccessMsg, setOcrSuccessMsg] = useState('');
   const [result, setResult] = useState(null);
   const [billFileName, setBillFileName] = useState('');
 
@@ -69,9 +71,58 @@ export default function PurchaseEntry() {
     }
   };
 
-  const handleFileUpload = (e) => {
-    if (e.target.files && e.target.files[0]) {
-      setBillFileName(e.target.files[0].name);
+  const handleFileUpload = async (e) => {
+    if (!e.target.files || !e.target.files[0]) return;
+    const file = e.target.files[0];
+    setBillFileName(file.name);
+    setOcrLoading(true);
+    setOcrSuccessMsg('');
+
+    try {
+      const formData = new FormData();
+      formData.append('billFile', file);
+
+      const res = await api.post('/purchases/ocr-extract', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+
+      if (res.data && res.data.success) {
+        const ocr = res.data.ocrData;
+
+        // Auto-fill header fields
+        setHeaderData(prev => ({
+          ...prev,
+          invoiceNumber: ocr.invoiceNumber || prev.invoiceNumber,
+          manufacturer: ocr.manufacturer || prev.manufacturer,
+          purchaseDate: ocr.purchaseDate || prev.purchaseDate,
+          invoiceDate: ocr.purchaseDate || prev.invoiceDate,
+          transport: ocr.transport || prev.transport,
+          lrNumber: ocr.lrNumber || prev.lrNumber
+        }));
+
+        // Auto-fill product line items
+        if (Array.isArray(ocr.items) && ocr.items.length > 0) {
+          const formattedItems = ocr.items.map((item, idx) => ({
+            id: Date.now() + idx,
+            productName: item.productName || '',
+            batchNumber: item.batchNumber || `BATCH-${Date.now().toString().slice(-4)}`,
+            quantity: item.quantity || 10,
+            weight: item.weight || item.packingSize || '1 kg',
+            purchaseCost: item.purchaseCost || 0,
+            mfgDate: item.mfgDate || todayDate,
+            warehouseLocation: item.warehouseLocation || 'Rack A1',
+            remarks: item.remarks || ''
+          }));
+          setItems(formattedItems);
+        }
+
+        setOcrSuccessMsg(`✨ Gemini 3.5 Flash-Lite AI extracted Invoice #${ocr.invoiceNumber || ''} with ${ocr.items?.length || 1} product line item(s)! Review and submit below.`);
+      }
+    } catch (err) {
+      console.error('OCR Error:', err);
+      alert('AI OCR extraction notice: ' + (err.response?.data?.message || err.message || 'Please fill in details manually.'));
+    } finally {
+      setOcrLoading(false);
     }
   };
 
@@ -113,6 +164,41 @@ export default function PurchaseEntry() {
         </div>
       </div>
 
+      {/* Gemini AI OCR Extraction Success / Progress Banner */}
+      {ocrLoading && (
+        <div className="bg-emerald-50 border-2 border-emerald-400 rounded-2xl p-4 flex items-center gap-3 shadow-md animate-pulse">
+          <Loader2 className="w-6 h-6 text-[#0F6E56] animate-spin shrink-0" />
+          <div>
+            <h4 className="text-xs font-black text-[#0F6E56] uppercase tracking-wider">
+              🤖 Gemini 3.5 Flash-Lite OCR in Progress...
+            </h4>
+            <p className="text-xs text-slate-700 font-medium mt-0.5">
+              Analyzing purchase invoice PDF / image, extracting invoice number, manufacturer, dates, and all product line items.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {ocrSuccessMsg && !ocrLoading && (
+        <div className="bg-gradient-to-r from-emerald-500 to-[#0F6E56] text-white rounded-2xl p-4 flex items-center justify-between shadow-lg">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-xl bg-white/20 flex items-center justify-center font-bold">
+              <Sparkles className="w-4 h-4 text-white" />
+            </div>
+            <div>
+              <h4 className="text-xs font-black tracking-wide">AI OCR Extraction Complete</h4>
+              <p className="text-xs text-white/90 font-medium">{ocrSuccessMsg}</p>
+            </div>
+          </div>
+          <button
+            onClick={() => setOcrSuccessMsg('')}
+            className="text-white/80 hover:text-white text-xs font-bold px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       {result && (
         <div className="bg-emerald-50 border-2 border-[#1D9E75] rounded-2xl p-6 shadow-md text-slate-900 space-y-4">
           <div className="flex items-center gap-3">
@@ -153,23 +239,33 @@ export default function PurchaseEntry() {
 
       {/* Form Card */}
       <form onSubmit={handleSubmit} className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-6">
-        {/* Bill Upload Section */}
-        <div className="border-2 border-dashed border-emerald-200 bg-emerald-50/40 rounded-xl p-4 text-center">
-          <Upload className="w-6 h-6 text-[#0F6E56] mx-auto mb-1" />
-          <p className="text-xs font-bold text-slate-700">Upload Manufacturer Purchase Bill (PDF / JPG)</p>
-          <p className="text-[10px] text-slate-500 mt-0.5">Attach invoice document for audit record</p>
+        {/* Bill Upload / Gemini OCR Section */}
+        <div className="border-2 border-dashed border-emerald-300 bg-emerald-50/50 hover:bg-emerald-50 rounded-2xl p-5 text-center transition-colors">
+          <div className="w-10 h-10 rounded-2xl bg-[#0F6E56] text-white mx-auto flex items-center justify-center shadow-md mb-2">
+            <Sparkles className="w-5 h-5" />
+          </div>
+          <p className="text-xs font-extrabold text-slate-800">
+            🤖 Smart AI Bill OCR (Gemini 3.5 Flash-Lite)
+          </p>
+          <p className="text-[11px] text-slate-500 mt-0.5">
+            Upload Manufacturer Purchase Bill (PDF or JPG/PNG) to automatically extract and populate all fields
+          </p>
           <input
             type="file"
             id="bill-file"
             className="hidden"
-            accept=".pdf,.jpg,.jpeg,.png"
+            accept=".pdf,.jpg,.jpeg,.png,.webp"
             onChange={handleFileUpload}
+            disabled={ocrLoading}
           />
           <label
             htmlFor="bill-file"
-            className="mt-2 inline-block bg-white border border-emerald-300 text-[#0F6E56] font-bold text-xs px-4 py-1.5 rounded-lg cursor-pointer hover:bg-emerald-50 transition-colors"
+            className={`mt-3 inline-flex items-center gap-2 bg-[#0F6E56] hover:bg-[#0B5442] text-white font-extrabold text-xs px-5 py-2.5 rounded-xl cursor-pointer shadow-md transition-all ${
+              ocrLoading ? 'opacity-50 cursor-not-allowed' : ''
+            }`}
           >
-            {billFileName ? `Selected: ${billFileName}` : 'Choose File'}
+            <Upload className="w-4 h-4" />
+            <span>{ocrLoading ? 'Scanning with Gemini AI...' : (billFileName ? `Selected: ${billFileName} (Click to re-scan)` : 'Upload Bill for Instant AI Fill')}</span>
           </label>
         </div>
 

@@ -35,9 +35,11 @@ export default function Login() {
 
       <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl relative z-10 border border-slate-100">
         <div className="text-center mb-6">
-          <div className="w-14 h-14 bg-[#0F6E56] text-white rounded-2xl mx-auto flex items-center justify-center shadow-lg shadow-emerald-950/20 mb-4">
-            <QrCode className="w-8 h-8" />
-          </div>
+          <img 
+            src="/logo.png" 
+            alt="Vaniki Stock Trace Logo" 
+            className="w-20 h-20 rounded-2xl mx-auto object-contain shadow-lg border border-slate-100 p-1 mb-4" 
+          />
           <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">Vaniki Stock Trace</h1>
           <p className="text-xs font-semibold text-[#0F6E56] mt-1 uppercase tracking-wider">
             Warehouse Inventory & QR Tracking System

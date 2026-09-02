@@ -499,15 +499,12 @@ const scanPickingItem = async (req, res) => {
 
     // Flexible Product Name & Product ID matching against order bill items
     const matchingLine = order.items.find(line => {
-      const pNameMatch = line.productName.toLowerCase().trim() === box.productName.toLowerCase().trim();
+      const lineName = (line.productName || '').toLowerCase().trim();
+      const boxName = (box.productName || '').toLowerCase().trim();
+      const pNameMatch = lineName === boxName || (lineName && boxName && (lineName.includes(boxName) || boxName.includes(lineName)));
       const pCodeMatch = line.productCode && box.productCode && line.productCode.toLowerCase().trim() === box.productCode.toLowerCase().trim();
 
-      const lineBatch = (line.batchNumber || '').toLowerCase().trim();
-      const boxBatch = (box.batchNumber || '').toLowerCase().trim();
-
-      const batchMatch = !lineBatch || !boxBatch || lineBatch === boxBatch || lineBatch === 'any' || boxBatch === 'any';
-
-      return (pNameMatch || pCodeMatch) && batchMatch;
+      return pNameMatch || pCodeMatch;
     });
 
     if (!matchingLine) {

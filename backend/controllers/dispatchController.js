@@ -11,12 +11,12 @@ const verifyBoxScan = async (req, res) => {
   try {
     const { qrId, salesInvoiceNo } = req.body;
 
-    if (!qrId || !salesInvoiceNo) {
+    if (!qrId) {
       return res.status(400).json({
         success: false,
         verified: false,
         code: 'MISSING_DATA',
-        reason: 'QR ID and Sales Invoice Number are required.'
+        reason: 'QR ID or Barcode is required.'
       });
     }
 
@@ -49,7 +49,27 @@ const verifyBoxScan = async (req, res) => {
       });
     }
 
-    // 3. Find Sales Invoice
+    // If no sales invoice is specified -> General Warehouse Stock Verification
+    if (!salesInvoiceNo || !salesInvoiceNo.trim()) {
+      return res.json({
+        success: true,
+        verified: true,
+        code: 'BOX_VERIFIED',
+        title: '✓ STOCK VERIFIED',
+        reason: `Product: ${box.productName} | Batch: ${box.batchNumber || 'N/A'} | Loc: ${box.warehouseLocation || 'Warehouse'}`,
+        box: {
+          id: box._id,
+          qrId: box.qrId,
+          productName: box.productName,
+          batchNumber: box.batchNumber,
+          weight: box.weight,
+          warehouseLocation: box.warehouseLocation,
+          status: box.status
+        }
+      });
+    }
+
+    // 3. Find Sales Invoice if provided
     const invoice = await SalesInvoice.findOne({ invoiceNo: salesInvoiceNo.trim() }).populate('dealerId');
     if (!invoice) {
       return res.json({
@@ -61,16 +81,14 @@ const verifyBoxScan = async (req, res) => {
       });
     }
 
-    // 4. Validate Product Name & Batch match invoice items
+    // 4. Validate Product Name matches invoice items (flexible case-insensitive and code match)
     const matchingItem = invoice.items.find(item => {
-      const pNameMatch = item.productName.toLowerCase().trim() === box.productName.toLowerCase().trim();
+      const lineName = (item.productName || '').toLowerCase().trim();
+      const boxName = (box.productName || '').toLowerCase().trim();
+      const pNameMatch = lineName === boxName || (lineName && boxName && (lineName.includes(boxName) || boxName.includes(lineName)));
       const pCodeMatch = item.productCode && box.productCode && item.productCode.toLowerCase().trim() === box.productCode.toLowerCase().trim();
 
-      const itemBatch = (item.batchNumber || '').toLowerCase().trim();
-      const boxBatch = (box.batchNumber || '').toLowerCase().trim();
-      const batchMatch = !itemBatch || !boxBatch || itemBatch === boxBatch || itemBatch === 'any' || boxBatch === 'any';
-
-      return (pNameMatch || pCodeMatch) && batchMatch;
+      return pNameMatch || pCodeMatch;
     });
 
     if (!matchingItem) {
@@ -91,7 +109,7 @@ const verifyBoxScan = async (req, res) => {
       verified: true,
       code: 'VERIFIED_READY',
       title: 'Verified - Ready for Dispatch',
-      reason: `Box ${box.qrId} matches Invoice #${salesInvoiceNo} for dealer ${invoice.dealerName} (${invoice.garageName}).`,
+      reason: `Box ${box.qrId} (${box.productName} - Batch: ${box.batchNumber || 'N/A'}) matches Invoice #${salesInvoiceNo} for dealer ${invoice.dealerName || 'Dealer'} (${invoice.garageName || 'Store'}).`,
       box: {
         id: box._id,
         qrId: box.qrId,
@@ -100,10 +118,16 @@ const verifyBoxScan = async (req, res) => {
         weight: box.weight,
         warehouseLocation: box.warehouseLocation
       },
+      matchedItem: {
+        productName: matchingItem.productName,
+        orderedQuantity: matchingItem.quantity || 1,
+        weight: matchingItem.weight || box.weight
+      },
       invoice: {
         invoiceNo: invoice.invoiceNo,
         dealerName: invoice.dealerName,
-        garageName: invoice.garageName
+        garageName: invoice.garageName,
+        items: invoice.items
       }
     });
   } catch (err) {
@@ -129,19 +153,24 @@ const confirmDispatch = async (req, res) => {
       dispatchPhotoUrl
     } = req.body;
 
-    if (!salesInvoiceNo || !scannedQrIds || !Array.isArray(scannedQrIds) || scannedQrIds.length === 0) {
-      return res.status(400).json({ success: false, message: 'Please provide Sales Invoice Number and scanned box QR IDs.' });
+    if (!scannedQrIds || !Array.isArray(scannedQrIds) || scannedQrIds.length === 0) {
+      return res.status(400).json({ success: false, message: 'Please provide scanned box QR IDs.' });
     }
 
-    const invoice = await SalesInvoice.findOne({ invoiceNo: salesInvoiceNo }).populate('dealerId');
-    if (!invoice) return res.status(404).json({ success: false, message: 'Invoice not found' });
+    const cleanInvoiceNo = (salesInvoiceNo && salesInvoiceNo.trim()) ? salesInvoiceNo.trim() : `DSP-INV-${Date.now().toString().slice(-4)}`;
+    const invoice = await SalesInvoice.findOne({ invoiceNo: cleanInvoiceNo }).populate('dealerId');
+    let dealerId = invoice?.dealerId?._id;
+    if (!dealerId) {
+      const defaultDealer = await Dealer.findOne();
+      dealerId = defaultDealer ? defaultDealer._id : null;
+    }
 
     const dispatchNo = `DSP-${Date.now().toString().slice(-6)}`;
 
     const dispatch = await Dispatch.create({
       dispatchNo,
-      salesInvoiceNo,
-      dealerId: invoice.dealerId._id,
+      salesInvoiceNo: cleanInvoiceNo,
+      dealerId,
       scannedBoxQrIds: scannedQrIds,
       courierName: courierName || 'Direct Transport',
       vehicleNumber: vehicleNumber || 'N/A',
@@ -151,7 +180,7 @@ const confirmDispatch = async (req, res) => {
       expectedDelivery: expectedDelivery || Date.now(),
       remarks: remarks || '',
       verifiedBy: req.user?.name || 'Warehouse Operator',
-      handoverTo: handoverTo || invoice.dealerId.dealerName,
+      handoverTo: handoverTo || (invoice?.dealerName || 'Consignee / Customer'),
       dispatchPhotoUrl: dispatchPhotoUrl || '',
       dispatchPhotoUploadedAt: dispatchPhotoUrl ? new Date() : null,
       status: 'dispatched'
@@ -162,7 +191,7 @@ const confirmDispatch = async (req, res) => {
       const box = await StockBox.findOne({ qrId });
       if (box) {
         box.status = 'dispatched';
-        box.assignedInvoiceNo = salesInvoiceNo;
+        box.assignedInvoiceNo = cleanInvoiceNo;
         box.assignedDealerId = invoice.dealerId._id;
         box.dispatchId = dispatch._id;
         box.history.push({
@@ -198,7 +227,7 @@ const confirmDispatch = async (req, res) => {
         box.history.push({
           stage: 'Delivered',
           title: 'Handed to Delivery Agent',
-          description: `Dispatched for delivery to ${invoice.dealerName}`,
+          description: `Dispatched for delivery to ${invoice?.dealerName || 'Consignee / Customer'}`,
           performedBy: req.user?.name || 'Warehouse Operator',
           timestamp: new Date()
         });
@@ -206,14 +235,16 @@ const confirmDispatch = async (req, res) => {
       }
     }
 
-    // Update invoice status
-    invoice.status = 'dispatched';
-    invoice.scannedCount = scannedQrIds.length;
-    if (dispatchPhotoUrl) {
-      invoice.dispatchPhotoUrl = dispatchPhotoUrl;
-      invoice.dispatchPhotoUploadedAt = new Date();
+    // Update invoice status if invoice exists
+    if (invoice) {
+      invoice.status = 'dispatched';
+      invoice.scannedCount = scannedQrIds.length;
+      if (dispatchPhotoUrl) {
+        invoice.dispatchPhotoUrl = dispatchPhotoUrl;
+        invoice.dispatchPhotoUploadedAt = new Date();
+      }
+      await invoice.save();
     }
-    await invoice.save();
 
     await AuditLog.create({
       action: 'DISPATCH_COMPLETED',
