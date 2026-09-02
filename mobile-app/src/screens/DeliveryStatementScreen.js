@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity, Linking, ActivityIndicator, Image, Modal, Alert } from 'react-native';
+import React, { useState, useCallback } from 'react';
+import { View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity, Linking, ActivityIndicator, Image, Modal, Alert, RefreshControl } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { COLORS } from '../theme';
 import mobileApi from '../services/api';
 import PhotoCaptureModal from '../components/PhotoCaptureModal';
@@ -7,25 +8,34 @@ import PhotoCaptureModal from '../components/PhotoCaptureModal';
 export default function DeliveryStatementScreen() {
   const [dispatches, setDispatches] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [viewPhotoUrl, setViewPhotoUrl] = useState(null);
   const [activeDispatchForPhoto, setActiveDispatchForPhoto] = useState(null);
   const [photoModalVisible, setPhotoModalVisible] = useState(false);
-
-  useEffect(() => {
-    fetchDispatches();
-  }, []);
 
   const fetchDispatches = async () => {
     try {
       const res = await mobileApi.get('/dispatches');
       if (res.data.success) {
-        setDispatches(res.data.dispatches);
+        setDispatches(res.data.dispatches || []);
       }
     } catch (err) {
       console.error('Fetch dispatches error:', err.message);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
+  };
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchDispatches();
+    }, [])
+  );
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    fetchDispatches();
   };
 
   const handleWhatsApp = (item) => {
@@ -60,7 +70,12 @@ export default function DeliveryStatementScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scroll}>
+      <ScrollView 
+        contentContainerStyle={styles.scroll}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[COLORS.primary || '#0F6E56']} />
+        }
+      >
         <Text style={styles.title}>Delivery Statements & Handover ({dispatches.length})</Text>
         <Text style={styles.subtitle}>Generated delivery statements with QR list & goods photo proof</Text>
 

@@ -81,35 +81,59 @@ const verifyBoxScan = async (req, res) => {
       });
     }
 
-    // 4. Validate Product Name matches invoice items (flexible case-insensitive and code match)
-    const matchingItem = invoice.items.find(item => {
-      const lineName = (item.productName || '').toLowerCase().trim();
-      const boxName = (box.productName || '').toLowerCase().trim();
-      const pNameMatch = lineName === boxName || (lineName && boxName && (lineName.includes(boxName) || boxName.includes(lineName)));
-      const pCodeMatch = item.productCode && box.productCode && item.productCode.toLowerCase().trim() === box.productCode.toLowerCase().trim();
+    // 4. Validate Product & Strict Batch Number Match against invoice items
+    const norm = (s) => (s || '').toString().toLowerCase().trim().replace(/[^a-z0-9]/g, '');
 
+    const matchingProductItems = invoice.items.filter(item => {
+      const lineName = norm(item.productName);
+      const boxName = norm(box.productName);
+      const pNameMatch = lineName === boxName || (lineName && boxName && (lineName.includes(boxName) || boxName.includes(lineName)));
+      const pCodeMatch = item.productCode && box.productCode && norm(item.productCode) === norm(box.productCode);
       return pNameMatch || pCodeMatch;
     });
 
-    if (!matchingItem) {
+    if (matchingProductItems.length === 0) {
       return res.json({
         success: false,
         verified: false,
         code: 'PRODUCT_MISMATCH',
-        title: 'Product Mismatch',
-        reason: `Box product "${box.productName}" (QR: ${box.qrId}) is NOT present in Invoice #${salesInvoiceNo}!`,
+        title: 'Wrong Product (Mismatch)',
+        reason: `Scanned box product "${box.productName}" (QR: ${box.qrId}) is NOT in Invoice #${salesInvoiceNo}!`,
         box,
         invoice
       });
     }
 
-    // 5. If everything matches -> GREEN SCREEN (Verified)
+    // Strict Batch Number Matching
+    const matchingItem = matchingProductItems.find(item => {
+      if (!item.batchNumber || !item.batchNumber.trim() || item.batchNumber.trim().toUpperCase() === 'ANY') {
+        return true;
+      }
+      const itemBatch = norm(item.batchNumber);
+      const boxBatch = norm(box.batchNumber);
+      return itemBatch === boxBatch;
+    });
+
+    if (!matchingItem) {
+      const expectedBatches = matchingProductItems.map(i => i.batchNumber).filter(Boolean).join(', ') || 'N/A';
+      return res.json({
+        success: false,
+        verified: false,
+        code: 'BATCH_MISMATCH',
+        title: 'Wrong Batch Number (Mismatch)',
+        reason: `Box has Batch "${box.batchNumber || 'N/A'}" (QR: ${box.qrId}), but Invoice #${salesInvoiceNo} requires Batch "${expectedBatches}" for "${box.productName}"!`,
+        box,
+        invoice
+      });
+    }
+
+    // 5. If Product & Batch match -> GREEN SCREEN (Verified)
     return res.json({
       success: true,
       verified: true,
       code: 'VERIFIED_READY',
-      title: 'Verified - Ready for Dispatch',
-      reason: `Box ${box.qrId} (${box.productName} - Batch: ${box.batchNumber || 'N/A'}) matches Invoice #${salesInvoiceNo} for dealer ${invoice.dealerName || 'Dealer'} (${invoice.garageName || 'Store'}).`,
+      title: '✓ VERIFIED - BATCH MATCH',
+      reason: `Box ${box.qrId} (${box.productName} | Batch: ${box.batchNumber || 'N/A'}) matches Invoice #${salesInvoiceNo} for dealer ${invoice.dealerName || 'Dealer'}.`,
       box: {
         id: box._id,
         qrId: box.qrId,
@@ -120,6 +144,7 @@ const verifyBoxScan = async (req, res) => {
       },
       matchedItem: {
         productName: matchingItem.productName,
+        batchNumber: matchingItem.batchNumber,
         orderedQuantity: matchingItem.quantity || 1,
         weight: matchingItem.weight || box.weight
       },

@@ -1,13 +1,15 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, SafeAreaView, Modal, Alert, ScrollView } from 'react-native';
+import React, { useState, useEffect, useCallback } from 'react';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, SafeAreaView, Modal, Alert, ScrollView, ActivityIndicator } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { COLORS } from '../theme';
 import mobileApi from '../services/api';
 import QRScannerModal from '../components/QRScannerModal';
 import PhotoCaptureModal from '../components/PhotoCaptureModal';
 
 export default function ScanVerifyScreen({ route, navigation }) {
-  const initialInv = route?.params?.invoiceNo || route?.params?.salesInvoiceNo || '';
-  const [invoiceNo, setInvoiceNo] = useState(initialInv);
+  const [invoiceNo, setInvoiceNo] = useState(route?.params?.invoiceNo || route?.params?.salesInvoiceNo || '');
+  const [activeInvoice, setActiveInvoice] = useState(null);
+  const [invoiceLoading, setInvoiceLoading] = useState(false);
   const [qrInput, setQrInput] = useState('');
   const [scanResult, setScanResult] = useState(null); // { type: 'GREEN' | 'RED', title, reason, box }
   const [verifiedList, setVerifiedList] = useState([]);
@@ -15,11 +17,33 @@ export default function ScanVerifyScreen({ route, navigation }) {
   const [cameraVisible, setCameraVisible] = useState(false);
   const [photoCaptureVisible, setPhotoCaptureVisible] = useState(false);
 
-  useEffect(() => {
-    if (route?.params?.invoiceNo) {
-      setInvoiceNo(route.params.invoiceNo);
+  useFocusEffect(
+    useCallback(() => {
+      const targetInv = route?.params?.invoiceNo || route?.params?.salesInvoiceNo;
+      if (targetInv) {
+        setInvoiceNo(targetInv);
+        fetchInvoiceInfo(targetInv);
+      }
+    }, [route?.params?.invoiceNo, route?.params?.salesInvoiceNo])
+  );
+
+  const fetchInvoiceInfo = async (inv) => {
+    if (!inv || !inv.trim()) return;
+    try {
+      setInvoiceLoading(true);
+      const res = await mobileApi.get('/user/orders');
+      if (res.data.success && res.data.orders) {
+        const found = res.data.orders.find(o => o.invoiceNo?.trim().toUpperCase() === inv.trim().toUpperCase());
+        if (found) {
+          setActiveInvoice(found);
+        }
+      }
+    } catch (e) {
+      console.log('Fetch invoice info err:', e.message);
+    } finally {
+      setInvoiceLoading(false);
     }
-  }, [route?.params?.invoiceNo]);
+  };
 
   const handleVerify = async (providedQr) => {
     let target = (providedQr || qrInput).trim().toUpperCase();
@@ -41,7 +65,7 @@ export default function ScanVerifyScreen({ route, navigation }) {
         const boxData = res.data.box;
         setScanResult({
           type: 'GREEN',
-          title: res.data.title || '✓ VERIFIED - READY FOR DISPATCH',
+          title: res.data.title || '✓ VERIFIED - BATCH MATCH',
           reason: res.data.reason || `Box ${target} verified successfully.`,
           box: boxData
         });
@@ -56,7 +80,7 @@ export default function ScanVerifyScreen({ route, navigation }) {
         setScanResult({
           type: 'RED',
           title: res.data.title || '✖ MISMATCH DETECTED',
-          reason: res.data.reason || res.data.message || 'Box QR does not match active Sales Invoice!'
+          reason: res.data.reason || res.data.message || 'Box QR does not match active Sales Invoice or Batch!'
         });
         setQrInput('');
         return;
@@ -74,6 +98,14 @@ export default function ScanVerifyScreen({ route, navigation }) {
   };
 
   const handleCompleteDispatch = async (photoData = '') => {
+    if (!verifiedList || verifiedList.length === 0) {
+      Alert.alert(
+        '⚠️ No Boxes Verified',
+        'Please scan and verify at least 1 box QR code before completing dispatch handover.'
+      );
+      return;
+    }
+
     try {
       setLoading(true);
       const qrIds = verifiedList.map(b => b.qrId);
@@ -87,11 +119,27 @@ export default function ScanVerifyScreen({ route, navigation }) {
         driverMobile: '9876543210',
         dispatchPhotoUrl: photoData
       });
-      Alert.alert('✅ Handover Complete!', `${verifiedList.length} boxes verified & recorded in statement!`);
-      navigation.navigate('DeliveryStatement');
+
+      if (res.data && res.data.success) {
+        Alert.alert(
+          '✅ Dispatch Completed!',
+          `Statement generated for ${verifiedList.length} verified boxes.`,
+          [
+            {
+              text: 'View Statement',
+              onPress: () => {
+                setVerifiedList([]);
+                navigation.navigate('DeliveryStatement');
+              }
+            }
+          ]
+        );
+      } else {
+        Alert.alert('Dispatch Notice', res.data?.message || 'Dispatch confirmation failed.');
+      }
     } catch (err) {
-      Alert.alert('Notice', 'Handover recorded. Redirecting to delivery statement.');
-      navigation.navigate('DeliveryStatement');
+      const errMsg = err.response?.data?.message || err.message || 'Server error saving dispatch statement.';
+      Alert.alert('Dispatch Error', errMsg);
     } finally {
       setLoading(false);
     }
@@ -112,14 +160,58 @@ export default function ScanVerifyScreen({ route, navigation }) {
 
         {/* Invoice Selector Card */}
         <View style={styles.card}>
-          <Text style={styles.label}>Active Sales Invoice Number (Optional for General Stock Scan)</Text>
+          <Text style={styles.label}>Active Sales Invoice Number</Text>
           <TextInput
             style={styles.input}
             value={invoiceNo}
-            onChangeText={setInvoiceNo}
-            placeholder="e.g. SL-INV-1092 (or leave blank for stock check)"
+            onChangeText={(text) => {
+              setInvoiceNo(text);
+              fetchInvoiceInfo(text);
+            }}
+            placeholder="e.g. SL-INV-7654"
           />
         </View>
+
+        {/* REQUIRED PRODUCTS & BATCH DETAILS CARD */}
+        {activeInvoice && (
+          <View style={styles.billRequiredCard}>
+            <View style={styles.billHeaderRow}>
+              <Text style={styles.billTitle}>Required Items for Bill #{activeInvoice.invoiceNo}</Text>
+              <Text style={styles.billDealer}>{activeInvoice.dealerName} ({activeInvoice.garageName || 'Store'})</Text>
+            </View>
+
+            <View style={styles.requiredItemsList}>
+              {activeInvoice.items?.map((item, idx) => {
+                const verifiedCount = verifiedList.filter(b => {
+                  const bName = (b.productName || '').toLowerCase().trim();
+                  const iName = (item.productName || '').toLowerCase().trim();
+                  const nameMatch = bName === iName || bName.includes(iName) || iName.includes(bName);
+                  const bBatch = (b.batchNumber || '').toLowerCase().trim();
+                  const iBatch = (item.batchNumber || '').toLowerCase().trim();
+                  const batchMatch = !iBatch || iBatch === 'any' || bBatch === iBatch;
+                  return nameMatch && batchMatch;
+                }).length;
+                const isItemDone = verifiedCount >= (item.quantity || 1);
+
+                return (
+                  <View key={idx} style={[styles.requiredItemRow, isItemDone && styles.requiredItemRowDone]}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.requiredItemName}>• {item.productName}</Text>
+                      <Text style={styles.requiredItemBatch}>
+                        Required Batch: <Text style={{ fontWeight: '900', color: '#0F6E56' }}>{item.batchNumber || 'Any Batch'}</Text>
+                      </Text>
+                    </View>
+                    <View style={[styles.qtyBadge, isItemDone ? styles.qtyBadgeDone : styles.qtyBadgePending]}>
+                      <Text style={[styles.qtyBadgeText, isItemDone ? styles.qtyTextDone : styles.qtyTextPending]}>
+                        {verifiedCount} / {item.quantity || 1} {isItemDone ? '✓' : 'Boxes'}
+                      </Text>
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+          </View>
+        )}
 
         {/* QR Scan Input Card */}
         <View style={styles.scanCard}>
@@ -302,6 +394,21 @@ const styles = StyleSheet.create({
   boxInfoProd: { fontSize: 13, fontWeight: '700', color: COLORS.slate900, marginTop: 4 },
   boxInfoBatch: { fontSize: 11, color: COLORS.slate500, marginTop: 2 },
   dismissBtn: { backgroundColor: '#FFF', paddingHorizontal: 30, paddingVertical: 14, borderRadius: 16, shadowColor: '#000', shadowOpacity: 0.2, elevation: 4 },
-  dismissBtnText: { color: COLORS.slate900, fontWeight: '900', fontSize: 14 }
+  dismissBtnText: { color: COLORS.slate900, fontWeight: '900', fontSize: 14 },
+  billRequiredCard: { backgroundColor: '#FFF', borderRadius: 14, padding: 14, borderWidth: 1.5, borderColor: '#0F6E56', marginBottom: 14 },
+  billHeaderRow: { borderBottomWidth: 1, borderBottomColor: '#F1F5F9', pb: 8, marginBottom: 8 },
+  billTitle: { fontSize: 13, fontWeight: '900', color: '#0F6E56' },
+  billDealer: { fontSize: 11, fontWeight: '700', color: '#64748B', marginTop: 2 },
+  requiredItemsList: { marginTop: 4 },
+  requiredItemRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F8FAFC', padding: 10, borderRadius: 10, marginBottom: 6, borderWidth: 1, borderColor: '#E2E8F0' },
+  requiredItemRowDone: { backgroundColor: '#ECFDF5', borderColor: '#A7F3D0' },
+  requiredItemName: { fontSize: 12, fontWeight: '800', color: '#1E293B' },
+  requiredItemBatch: { fontSize: 11, color: '#64748B', marginTop: 2 },
+  qtyBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
+  qtyBadgeDone: { backgroundColor: '#D1FAE5' },
+  qtyBadgePending: { backgroundColor: '#FEF3C7' },
+  qtyBadgeText: { fontSize: 11, fontWeight: '900' },
+  qtyTextDone: { color: '#065F46' },
+  qtyTextPending: { color: '#92400E' }
 });
 
