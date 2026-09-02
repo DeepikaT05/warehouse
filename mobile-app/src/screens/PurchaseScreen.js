@@ -33,14 +33,16 @@ export default function PurchaseScreen({ navigation }) {
         warehouseLocation
       });
 
-      if (res.data.success) {
-        Alert.alert('Success', `Logged Purchase! Generated ${res.data.totalBoxesGenerated} box QR codes (${res.data.firstQrId} to ${res.data.lastQrId})`);
+      if (res.data && res.data.success) {
+        Alert.alert('✅ Purchase Saved!', `Logged Purchase! Generated ${res.data.totalBoxesGenerated} box QR codes (${res.data.firstQrId} to ${res.data.lastQrId})`);
         navigation.navigate('QRPrint', { purchaseId: res.data.purchase._id });
         return;
+      } else {
+        Alert.alert('Error', res.data?.message || 'Could not save purchase.');
       }
     } catch (err) {
-      Alert.alert('Purchase Logged (Offline Mode)', `Generated ${quantity} Box QR stickers (${productName})`);
-      navigation.navigate('QRPrint');
+      const msg = err.response?.data?.message || err.message || 'Network error saving purchase.';
+      Alert.alert('Purchase Error', msg);
     } finally {
       setLoading(false);
     }
