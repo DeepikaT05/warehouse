@@ -1,5 +1,4 @@
 require('dotenv').config();
-const axios = require('axios');
 const Product = require('../models/Product');
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
@@ -78,12 +77,20 @@ Rules:
           }
         };
 
-        const response = await axios.post(url, payload, {
+        const res = await fetch(url, {
+          method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          timeout: 25000
+          body: JSON.stringify(payload)
         });
 
-        const candidate = response.data?.candidates?.[0];
+        if (!res.ok) {
+          const errText = await res.text();
+          console.warn(`Gemini model ${model} HTTP error ${res.status}:`, errText);
+          continue;
+        }
+
+        const data = await res.json();
+        const candidate = data?.candidates?.[0];
         const rawText = candidate?.content?.parts?.[0]?.text;
 
         if (rawText) {

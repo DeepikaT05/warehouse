@@ -17,7 +17,7 @@ const searchRoutes = require('./routes/searchRoutes');
 const { seedUsers } = require('./controllers/authController');
 
 const app = express();
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 5060;
 
 // Connect Database & Seed default accounts
 connectDB().then(() => {

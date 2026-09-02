@@ -194,6 +194,17 @@ const getPurchases = async (req, res) => {
   }
 };
 
+const getPurchaseById = async (req, res) => {
+  try {
+    const purchase = await Purchase.findById(req.params.id);
+    if (!purchase) return res.status(404).json({ success: false, message: 'Purchase record not found' });
+    const boxes = await StockBox.find({ purchaseId: purchase._id });
+    return res.json({ success: true, purchase, boxes });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};
+
 const { extractPurchaseBillWithGemini } = require('../utils/geminiOcrService');
 
 const extractPurchaseOcr = async (req, res) => {
