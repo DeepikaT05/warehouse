@@ -21,7 +21,7 @@ async function extractPurchaseBillWithGemini(fileBuffer, mimeType, fileName = ''
     base64Data = fileBuffer.toString('base64');
   }
   
-  const systemPrompt = `You are an expert OCR & Invoice Parser AI for Warehouse Management.
+  const systemPrompt = `You are an expert OCR & Purchase Invoice Parser AI for Warehouse Management.
 Analyze this uploaded Purchase Invoice/Bill document (image or PDF) and extract the exact fields in valid JSON format.
 
 Required JSON Structure:
@@ -33,12 +33,18 @@ Required JSON Structure:
   "lrNumber": "string (LR / Bilty / Consignment Number if present, otherwise '')",
   "items": [
     {
-      "productName": "string (Product / Item Name, e.g. Crop Shield Super 500ml)",
+      "productName": "string (Product / Item Name, e.g. Crop Shield Super)",
+      "hsnCode": "string (HSN/SAC Code e.g. 38089910 or 3105)",
       "batchNumber": "string (Batch number e.g. BATCH-2026A)",
-      "quantity": 10 (number of boxes or packages as integer, minimum 1),
-      "weight": "string (Packaging size e.g. 500ml, 1 kg, 5 Ltr)",
+      "packing": "string (Unit packing size e.g. 500ml, 1 kg, 250ml, 5 Ltr, 1 Ltr)",
+      "mfgDate": "YYYY-MM-DD (Manufacturing date if mentioned)",
+      "expDate": "YYYY-MM-DD (Expiry date if mentioned)",
+      "cases": 10 (number of master cases / cartons / boxes as integer, minimum 1),
+      "casePacking": "string (e.g. 20 Bottles x 500ml = 10 Ltr/case or 10 kg/case)",
+      "quantity": 10 (total number of boxes/stickers to generate, default equal to cases),
+      "weight": "string (Weight per box e.g. 1 kg or 500ml)",
       "purchaseCost": 0 (unit price or purchase cost per box as number),
-      "warehouseLocation": "string (suggested rack e.g. Rack A1)",
+      "warehouseLocation": "string (suggested rack e.g. Rack A1-Bay 1)",
       "remarks": "string"
     }
   ],
@@ -47,8 +53,10 @@ Required JSON Structure:
 
 Rules:
 1. Extract all line items listed in the invoice. If multiple products are present, include each product in the "items" array.
-2. If batch number is not printed in invoice, generate a reasonable batch format (e.g. "BATCH-2026").
-3. Return ONLY pure valid JSON, without any markdown formatting, backticks, or explanatory text.`;
+2. If HSN/SAC is present in columns, map to "hsnCode".
+3. If packing details (e.g. 500ml, 1 Ltr, 20x500ml) are present, extract into "packing" and "casePacking".
+4. If batch, mfg date or exp date are printed, extract accurately in YYYY-MM-DD format.
+5. Return ONLY pure valid JSON, without any markdown formatting, backticks, or explanatory text.`;
 
   const activeKey = process.env.GEMINI_API_KEY || GEMINI_API_KEY;
 

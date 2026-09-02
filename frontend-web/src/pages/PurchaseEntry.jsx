@@ -20,12 +20,17 @@ export default function PurchaseEntry() {
     {
       id: 1,
       productName: '',
+      hsnCode: '',
       batchNumber: '',
-      quantity: '',
-      weight: '',
-      purchaseCost: '',
+      packing: '1 kg',
       mfgDate: todayDate,
-      warehouseLocation: '',
+      expDate: '',
+      cases: 10,
+      casePacking: '10 kg/case',
+      quantity: 10,
+      weight: '1 kg',
+      purchaseCost: '',
+      warehouseLocation: 'Rack A1',
       remarks: ''
     }
   ]);
@@ -44,6 +49,10 @@ export default function PurchaseEntry() {
     setItems(prev => {
       const updated = [...prev];
       updated[index] = { ...updated[index], [field]: value };
+      // Keep quantity in sync with cases if quantity is edited or cases changed
+      if (field === 'cases' && (!updated[index].quantity || updated[index].quantity === prev[index].cases)) {
+        updated[index].quantity = value;
+      }
       return updated;
     });
   };
@@ -54,11 +63,16 @@ export default function PurchaseEntry() {
       {
         id: Date.now(),
         productName: '',
+        hsnCode: '',
         batchNumber: '',
+        packing: '1 kg',
+        mfgDate: todayDate,
+        expDate: '',
+        cases: 10,
+        casePacking: '10 kg/case',
         quantity: 10,
         weight: '1 kg',
         purchaseCost: 0,
-        mfgDate: todayDate,
         warehouseLocation: 'Rack A1',
         remarks: ''
       }
@@ -105,11 +119,16 @@ export default function PurchaseEntry() {
           const formattedItems = ocr.items.map((item, idx) => ({
             id: Date.now() + idx,
             productName: item.productName || '',
+            hsnCode: item.hsnCode || '',
             batchNumber: item.batchNumber || `BATCH-${Date.now().toString().slice(-4)}`,
-            quantity: item.quantity || 10,
-            weight: item.weight || item.packingSize || '1 kg',
-            purchaseCost: item.purchaseCost || 0,
+            packing: item.packing || item.weight || '1 kg',
             mfgDate: item.mfgDate || todayDate,
+            expDate: item.expDate || '',
+            cases: item.cases || item.quantity || 10,
+            casePacking: item.casePacking || (item.packing ? `${item.packing}/case` : '10 kg/case'),
+            quantity: item.quantity || item.cases || 10,
+            weight: item.weight || item.packing || '1 kg',
+            purchaseCost: item.purchaseCost || 0,
             warehouseLocation: item.warehouseLocation || 'Rack A1',
             remarks: item.remarks || ''
           }));
@@ -379,7 +398,8 @@ export default function PurchaseEntry() {
                 )}
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-xs">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-3.5 text-xs">
+                {/* Row 1 */}
                 <div className="md:col-span-2">
                   <label className="block font-bold text-slate-700 mb-1">Product Name *</label>
                   <input
@@ -387,8 +407,19 @@ export default function PurchaseEntry() {
                     required
                     value={item.productName}
                     onChange={(e) => handleItemChange(index, 'productName', e.target.value)}
-                    placeholder="e.g. Crop Shield Super 500ml"
+                    placeholder="e.g. Crop Shield Super"
                     className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-[#0F6E56]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">HSN / SAC Code</label>
+                  <input
+                    type="text"
+                    value={item.hsnCode}
+                    onChange={(e) => handleItemChange(index, 'hsnCode', e.target.value)}
+                    placeholder="e.g. 38089910"
+                    className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono font-medium focus:outline-none focus:ring-2 focus:ring-[#0F6E56]"
                   />
                 </div>
 
@@ -404,27 +435,75 @@ export default function PurchaseEntry() {
                   />
                 </div>
 
+                {/* Row 2 */}
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">Quantity (No. of Boxes) *</label>
+                  <label className="block font-bold text-slate-700 mb-1">Packing (Unit Size) *</label>
                   <input
-                    type="number"
+                    type="text"
                     required
-                    min="1"
-                    max="500"
-                    value={item.quantity}
-                    onChange={(e) => handleItemChange(index, 'quantity', e.target.value)}
-                    className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-[#0F6E56] focus:outline-none focus:ring-2 focus:ring-[#0F6E56]"
+                    value={item.packing}
+                    onChange={(e) => handleItemChange(index, 'packing', e.target.value)}
+                    placeholder="e.g. 500ml / 1 kg / 5 Ltr"
+                    className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-[#0F6E56]"
                   />
                 </div>
 
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">Box Weight</label>
+                  <label className="block font-bold text-slate-700 mb-1">Mfg Date</label>
+                  <input
+                    type="date"
+                    value={item.mfgDate}
+                    onChange={(e) => handleItemChange(index, 'mfgDate', e.target.value)}
+                    className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-[#0F6E56]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Expiry Date</label>
+                  <input
+                    type="date"
+                    value={item.expDate}
+                    onChange={(e) => handleItemChange(index, 'expDate', e.target.value)}
+                    className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-[#0F6E56]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Cases (No. of Cases) *</label>
+                  <input
+                    type="number"
+                    required
+                    min="1"
+                    max="1000"
+                    value={item.cases}
+                    onChange={(e) => handleItemChange(index, 'cases', e.target.value)}
+                    placeholder="e.g. 10"
+                    className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-[#0F6E56] focus:outline-none focus:ring-2 focus:ring-[#0F6E56]"
+                  />
+                </div>
+
+                {/* Row 3 */}
+                <div className="md:col-span-2">
+                  <label className="block font-bold text-slate-700 mb-1">Cases per Kg / Liter / ML (Master Packing)</label>
                   <input
                     type="text"
-                    value={item.weight}
-                    onChange={(e) => handleItemChange(index, 'weight', e.target.value)}
-                    placeholder="e.g. 1 kg"
+                    value={item.casePacking}
+                    onChange={(e) => handleItemChange(index, 'casePacking', e.target.value)}
+                    placeholder="e.g. 20 Bottles x 500ml = 10 Ltr/Case or 10 kg/Case"
                     className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-[#0F6E56]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Boxes to Generate (QR Count) *</label>
+                  <input
+                    type="number"
+                    required
+                    min="1"
+                    max="1000"
+                    value={item.quantity}
+                    onChange={(e) => handleItemChange(index, 'quantity', e.target.value)}
+                    className="w-full bg-emerald-50 border border-emerald-300 rounded-xl px-3 py-2 text-xs font-black text-[#0F6E56] focus:outline-none focus:ring-2 focus:ring-[#0F6E56]"
                   />
                 </div>
 
@@ -434,11 +513,13 @@ export default function PurchaseEntry() {
                     type="number"
                     value={item.purchaseCost}
                     onChange={(e) => handleItemChange(index, 'purchaseCost', e.target.value)}
+                    placeholder="e.g. 450"
                     className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-[#0F6E56]"
                   />
                 </div>
 
-                <div>
+                {/* Row 4 */}
+                <div className="md:col-span-2">
                   <label className="block font-bold text-slate-700 mb-1">Warehouse Location / Rack</label>
                   <input
                     type="text"
@@ -449,13 +530,13 @@ export default function PurchaseEntry() {
                   />
                 </div>
 
-                <div>
+                <div className="md:col-span-2">
                   <label className="block font-bold text-slate-700 mb-1">Remarks</label>
                   <input
                     type="text"
                     value={item.remarks}
                     onChange={(e) => handleItemChange(index, 'remarks', e.target.value)}
-                    placeholder="Optional notes..."
+                    placeholder="Optional notes or supplier details..."
                     className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-[#0F6E56]"
                   />
                 </div>
