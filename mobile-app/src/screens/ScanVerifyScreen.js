@@ -1,18 +1,25 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, SafeAreaView, Modal, Alert, ScrollView } from 'react-native';
 import { COLORS } from '../theme';
 import mobileApi from '../services/api';
 import QRScannerModal from '../components/QRScannerModal';
 import PhotoCaptureModal from '../components/PhotoCaptureModal';
 
-export default function ScanVerifyScreen({ navigation }) {
-  const [invoiceNo, setInvoiceNo] = useState('');
+export default function ScanVerifyScreen({ route, navigation }) {
+  const initialInv = route?.params?.invoiceNo || route?.params?.salesInvoiceNo || '';
+  const [invoiceNo, setInvoiceNo] = useState(initialInv);
   const [qrInput, setQrInput] = useState('');
   const [scanResult, setScanResult] = useState(null); // { type: 'GREEN' | 'RED', title, reason, box }
   const [verifiedList, setVerifiedList] = useState([]);
   const [loading, setLoading] = useState(false);
   const [cameraVisible, setCameraVisible] = useState(false);
   const [photoCaptureVisible, setPhotoCaptureVisible] = useState(false);
+
+  useEffect(() => {
+    if (route?.params?.invoiceNo) {
+      setInvoiceNo(route.params.invoiceNo);
+    }
+  }, [route?.params?.invoiceNo]);
 
   const handleVerify = async (providedQr) => {
     let target = (providedQr || qrInput).trim().toUpperCase();

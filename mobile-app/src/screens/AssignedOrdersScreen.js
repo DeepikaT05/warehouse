@@ -117,7 +117,7 @@ export default function AssignedOrdersScreen({ navigation }) {
         ) : (
           <TouchableOpacity
             style={styles.actionBtn}
-            onPress={() => navigation.navigate('StockPicking', { orderId: item._id })}
+            onPress={() => navigation.navigate('ScanVerify', { invoiceNo: item.invoiceNo, orderId: item._id })}
           >
             <Text style={styles.actionBtnText}>
               {item.orderStatus === 'new' || item.orderStatus === 'viewed'

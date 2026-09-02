@@ -77,20 +77,6 @@ export default function DashboardScreen({ route, navigation }) {
           </TouchableOpacity>
         </View>
 
-        {/* Quick Dispatch Scanner Banner */}
-        <TouchableOpacity
-          style={styles.scanActionCard}
-          onPress={() => navigation.navigate('ScanVerify')}
-        >
-          <View style={styles.scanIconBg}>
-            <Text style={{ fontSize: 28 }}>📷</Text>
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.scanTitle}>SCAN & VERIFY DISPATCH</Text>
-            <Text style={styles.scanDesc}>Green Screen (Verified) / Red Screen (Mismatch)</Text>
-          </View>
-        </TouchableOpacity>
-
         {/* Warehouse Metrics Snapshot */}
         <Text style={styles.sectionTitle}>WAREHOUSE SNAPSHOT</Text>
         <View style={styles.grid}>
@@ -171,7 +157,7 @@ export default function DashboardScreen({ route, navigation }) {
                   </Text>
                   <TouchableOpacity
                     style={[styles.pickBtn, isCompleted && styles.pickBtnDone]}
-                    onPress={() => navigation.navigate('StockPicking', { orderId: bill._id })}
+                    onPress={() => navigation.navigate('ScanVerify', { invoiceNo: bill.invoiceNo, orderId: bill._id })}
                   >
                     <Text style={styles.pickBtnText}>
                       {isCompleted ? '✓ Verified' : '▶ Start Picking & Scan QR'}
