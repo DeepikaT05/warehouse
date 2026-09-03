@@ -13,6 +13,7 @@ const stockBoxSchema = new mongoose.Schema({
   barcode: { type: String, required: true },
   purchaseId: { type: mongoose.Schema.Types.ObjectId, ref: 'Purchase' },
   productName: { type: String, required: true },
+  technicalName: { type: String, default: '' },
   manufacturer: { type: String, required: true },
   batchNumber: { type: String, required: true },
   weight: { type: String, default: '1 kg' },

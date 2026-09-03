@@ -20,6 +20,7 @@ export default function PurchaseEntry() {
     {
       id: 1,
       productName: '',
+      technicalName: '',
       hsnCode: '',
       batchNumber: '',
       packing: '1 kg',
@@ -63,6 +64,7 @@ export default function PurchaseEntry() {
       {
         id: Date.now(),
         productName: '',
+        technicalName: '',
         hsnCode: '',
         batchNumber: '',
         packing: '1 kg',
@@ -119,6 +121,7 @@ export default function PurchaseEntry() {
           const formattedItems = ocr.items.map((item, idx) => ({
             id: Date.now() + idx,
             productName: item.productName || '',
+            technicalName: item.technicalName || '',
             hsnCode: item.hsnCode || '',
             batchNumber: item.batchNumber || `BATCH-${Date.now().toString().slice(-4)}`,
             packing: item.packing || item.weight || '1 kg',
@@ -401,13 +404,26 @@ export default function PurchaseEntry() {
               <div className="grid grid-cols-1 md:grid-cols-4 gap-3.5 text-xs">
                 {/* Row 1 */}
                 <div className="md:col-span-2">
-                  <label className="block font-bold text-slate-700 mb-1">Product Name *</label>
+                  <label className="block font-bold text-slate-700 mb-1">Product Name (Brand) *</label>
                   <input
                     type="text"
                     required
                     value={item.productName}
                     onChange={(e) => handleItemChange(index, 'productName', e.target.value)}
-                    placeholder="e.g. Crop Shield Super"
+                    placeholder="e.g. HYDRA 50, Bio Boost"
+                    className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-[#0F6E56]"
+                  />
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="block font-bold text-slate-700 mb-1">
+                    Technical / Chemical Name <span className="text-[10px] text-slate-400 font-normal">(Auto AI / Manual)</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={item.technicalName || ''}
+                    onChange={(e) => handleItemChange(index, 'technicalName', e.target.value)}
+                    placeholder="e.g. Chlorantraniliprole 18.5% SC"
                     className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-[#0F6E56]"
                   />
                 </div>

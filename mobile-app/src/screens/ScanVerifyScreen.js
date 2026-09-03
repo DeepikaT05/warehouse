@@ -213,37 +213,17 @@ export default function ScanVerifyScreen({ route, navigation }) {
           </View>
         )}
 
-        {/* QR Scan Input Card */}
+        {/* QR Scan Camera Card */}
         <View style={styles.scanCard}>
-          <Text style={styles.scanTitle}>Scan or Enter Box QR ID</Text>
+          <Text style={styles.scanTitle}>Camera Barcode & Box QR Scanner</Text>
+          <Text style={styles.scanSubtitle}>Tap below to scan physical box barcode / QR sticker with camera</Text>
 
           <TouchableOpacity
             style={styles.cameraScanBtn}
             onPress={() => setCameraVisible(true)}
+            activeOpacity={0.8}
           >
-            <Text style={styles.cameraScanBtnText}>📷 OPEN PHONE CAMERA SCANNER</Text>
-          </TouchableOpacity>
-
-          <View style={styles.dividerRow}>
-            <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>OR TYPE QR CODE</Text>
-            <View style={styles.dividerLine} />
-          </View>
-
-          <TextInput
-            style={[styles.input, styles.qrInput]}
-            value={qrInput}
-            onChangeText={setQrInput}
-            placeholder="e.g. VNK-1"
-            autoCapitalize="characters"
-          />
-
-          <TouchableOpacity
-            style={styles.verifyBtn}
-            onPress={() => handleVerify()}
-            disabled={loading}
-          >
-            <Text style={styles.verifyBtnText}>{loading ? 'Verifying...' : 'VERIFY BOX'}</Text>
+            <Text style={styles.cameraScanBtnText}>📷 TAP TO SCAN BOX BARCODE / QR</Text>
           </TouchableOpacity>
         </View>
 
@@ -360,9 +340,10 @@ const styles = StyleSheet.create({
   card: { backgroundColor: '#FFF', padding: 14, borderRadius: 14, borderWidth: 1, borderColor: COLORS.border, marginBottom: 14 },
   label: { fontSize: 11, fontWeight: '700', color: COLORS.slate700, marginBottom: 4 },
   input: { backgroundColor: COLORS.slate100, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 13, fontWeight: '700', color: COLORS.slate900 },
-  scanCard: { backgroundColor: '#FFF', padding: 18, borderRadius: 16, borderWidth: 2, borderColor: COLORS.primary, marginBottom: 16 },
-  scanTitle: { fontSize: 13, fontWeight: '900', color: COLORS.primary, marginBottom: 12 },
-  cameraScanBtn: { backgroundColor: '#0284C7', borderRadius: 12, paddingVertical: 14, alignItems: 'center', shadowColor: '#0284C7', shadowOpacity: 0.3, elevation: 4 },
+  scanCard: { backgroundColor: '#FFF', padding: 18, borderRadius: 16, borderWidth: 2, borderColor: '#0F6E56', marginBottom: 16 },
+  scanTitle: { fontSize: 14, fontWeight: '900', color: '#0F6E56', marginBottom: 4 },
+  scanSubtitle: { fontSize: 11, color: '#64748B', fontWeight: '600', marginBottom: 14 },
+  cameraScanBtn: { backgroundColor: '#0F6E56', borderRadius: 12, paddingVertical: 15, alignItems: 'center', shadowColor: '#0F6E56', shadowOpacity: 0.3, elevation: 4 },
   cameraScanBtnText: { color: '#FFF', fontWeight: '900', fontSize: 13, letterSpacing: 0.5 },
   dividerRow: { flexDirection: 'row', alignItems: 'center', marginVertical: 12 },
   dividerLine: { flex: 1, height: 1, backgroundColor: COLORS.border },

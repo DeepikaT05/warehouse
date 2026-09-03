@@ -393,37 +393,86 @@ const downloadDeliveryStatementPdf = async (req, res) => {
 
     doc.moveDown(6);
 
-    // Scanned QR Box Items Table
-    doc.fillColor(primaryColor).fontSize(12).text(`VERIFIED BOXES DISPATCHED (${dispatch.scannedBoxQrIds.length} ITEMS)`, 40, 245, { bold: true });
-    doc.strokeColor(primaryColor).lineWidth(1).moveTo(40, 260).lineTo(555, 260).stroke();
+    // Scanned QR Box Items Table with Quantity Column
+    doc.fillColor(primaryColor).fontSize(11).text(`VERIFIED DISPATCHED PRODUCTS SUMMARY (${dispatch.scannedBoxQrIds?.length || 0} TOTAL BOXES)`, 40, 245, { bold: true });
+    doc.strokeColor(primaryColor).lineWidth(1).moveTo(40, 258).lineTo(555, 258).stroke();
 
-    let y = 270;
-    doc.fillColor('#444444').fontSize(9);
-    doc.text('S.No', 45, y, { bold: true });
-    doc.text('QR ID', 90, y, { bold: true });
-    doc.text('Product Name', 210, y, { bold: true });
-    doc.text('Batch', 380, y, { bold: true });
-    doc.text('Status', 480, y, { bold: true });
+    let y = 268;
+    doc.fillColor('#1E293B').fontSize(8.5);
+    doc.text('S.No', 42, y, { bold: true });
+    doc.text('Product Name & Composition', 72, y, { bold: true, width: 160 });
+    doc.text('Batch No.', 235, y, { bold: true, width: 75 });
+    doc.text('Packing', 315, y, { bold: true, width: 55 });
+    doc.text('Qty (Boxes)', 375, y, { bold: true, width: 65, align: 'center' });
+    doc.text('Verified QR IDs Range', 445, y, { bold: true, width: 110 });
 
-    y += 15;
-    doc.strokeColor('#E2E8F0').lineWidth(0.5).moveTo(40, y).lineTo(555, y).stroke();
-    y += 8;
+    y += 14;
+    doc.strokeColor('#CBD5E1').lineWidth(0.5).moveTo(40, y).lineTo(555, y).stroke();
+    y += 6;
 
-    const boxes = await StockBox.find({ qrId: { $in: dispatch.scannedBoxQrIds } });
+    const boxes = await StockBox.find({ qrId: { $in: dispatch.scannedBoxQrIds || [] } });
 
-    boxes.forEach((box, idx) => {
-      if (y > 700) {
+    // Group boxes by Product + Batch
+    const groupMap = new Map();
+    boxes.forEach(box => {
+      const key = `${box.productName || 'General Product'}___${box.batchNumber || 'N/A'}`;
+      if (!groupMap.has(key)) {
+        groupMap.set(key, {
+          productName: box.productName || 'General Product',
+          technicalName: box.technicalName || '',
+          batchNumber: box.batchNumber || 'N/A',
+          packing: box.packing || box.weight || box.packingSize || '1 kg',
+          qrIds: [box.qrId],
+          quantity: 1
+        });
+      } else {
+        const g = groupMap.get(key);
+        g.quantity += 1;
+        g.qrIds.push(box.qrId);
+      }
+    });
+
+    const groupedItems = Array.from(groupMap.values());
+
+    groupedItems.forEach((item, idx) => {
+      if (y > 670) {
         doc.addPage();
         y = 50;
       }
-      doc.fillColor('#1A202C').fontSize(9);
-      doc.text(`${idx + 1}`, 45, y);
-      doc.text(`${box.qrId}`, 90, y);
-      doc.text(`${box.productName}`, 210, y);
-      doc.text(`${box.batchNumber}`, 380, y);
-      doc.text(`VERIFIED`, 480, y, { bold: true });
-      y += 18;
+
+      const qrSummary = item.qrIds.length > 2 
+        ? `${item.qrIds[0]} ... ${item.qrIds[item.qrIds.length - 1]} (${item.qrIds.length})` 
+        : item.qrIds.join(', ');
+
+      doc.fillColor('#1E293B').fontSize(8.5);
+      doc.text(`${idx + 1}`, 42, y);
+
+      // Product + Technical Name
+      let pDisplay = item.productName;
+      if (item.technicalName) {
+        pDisplay += `\n(${item.technicalName})`;
+      }
+      doc.text(pDisplay, 72, y, { width: 155 });
+      doc.text(item.batchNumber, 235, y, { width: 75 });
+      doc.text(item.packing, 315, y, { width: 55 });
+
+      // Quantity (Boxes) in bold highlight
+      doc.fillColor(primaryColor).text(`${item.quantity} Boxes`, 375, y, { bold: true, width: 65, align: 'center' });
+
+      // QR summary
+      doc.fillColor('#475569').text(qrSummary, 445, y, { width: 110 });
+
+      const rowHeight = item.technicalName ? 26 : 18;
+      y += rowHeight;
+      doc.strokeColor('#F1F5F9').lineWidth(0.5).moveTo(40, y).lineTo(555, y).stroke();
+      y += 4;
     });
+
+    // Total summary bar
+    y += 6;
+    doc.rect(40, y, 515, 20).fill('#F8FAFC');
+    doc.fillColor(primaryColor).fontSize(9).text(`TOTAL DISPATCHED: ${dispatch.scannedBoxQrIds?.length || 0} VERIFIED BOXES`, 48, y + 5, { bold: true });
+    y += 26;
 
     // Signatures Section
     y = Math.max(y + 40, 680);

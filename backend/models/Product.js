@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 const productSchema = new mongoose.Schema({
   productCode: { type: String, required: true, unique: true, trim: true },
   name: { type: String, required: true, trim: true },
+  technicalName: { type: String, default: '' },
   category: { type: String, required: true, default: 'Crop Protection' },
   unit: { type: String, default: 'kg' },
   packingSize: { type: String, default: '1 kg' },

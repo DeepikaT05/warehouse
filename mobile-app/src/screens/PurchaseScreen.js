@@ -7,6 +7,7 @@ export default function PurchaseScreen({ navigation }) {
   const [invoiceNumber, setInvoiceNumber] = useState('');
   const [manufacturer, setManufacturer] = useState('');
   const [productName, setProductName] = useState('');
+  const [technicalName, setTechnicalName] = useState('');
   const [batchNumber, setBatchNumber] = useState('');
   const [quantity, setQuantity] = useState('');
   const [weight, setWeight] = useState('');
@@ -26,6 +27,7 @@ export default function PurchaseScreen({ navigation }) {
         invoiceNumber,
         manufacturer,
         productName,
+        technicalName,
         batchNumber,
         quantity: parseInt(quantity, 10),
         weight,
@@ -62,7 +64,10 @@ export default function PurchaseScreen({ navigation }) {
           <TextInput style={styles.input} placeholder="e.g. Vaniki Crop Science" value={manufacturer} onChangeText={setManufacturer} />
 
           <Text style={styles.label}>Product Name *</Text>
-          <TextInput style={styles.input} placeholder="e.g. Crop Shield Super 500ml" value={productName} onChangeText={setProductName} />
+          <TextInput style={styles.input} placeholder="e.g. HYDRA 50 / Crop Shield" value={productName} onChangeText={setProductName} />
+
+          <Text style={styles.label}>Technical Name (Composition)</Text>
+          <TextInput style={styles.input} placeholder="e.g. Chlorantraniliprole 18.5% SC" value={technicalName} onChangeText={setTechnicalName} />
 
           <Text style={styles.label}>Batch Number *</Text>
           <TextInput style={styles.input} placeholder="e.g. BATCH-2026A" value={batchNumber} onChangeText={setBatchNumber} />

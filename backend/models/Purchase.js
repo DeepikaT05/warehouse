@@ -8,6 +8,7 @@ const purchaseSchema = new mongoose.Schema({
   transport: { type: String, default: '' },
   lrNumber: { type: String, default: '' },
   productName: { type: String, required: true },
+  technicalName: { type: String, default: '' },
   hsnCode: { type: String, default: '' },
   category: { type: String, default: 'Crop Protection' },
   batchNumber: { type: String, required: true },

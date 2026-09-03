@@ -64,12 +64,14 @@ const createPurchase = async (req, res) => {
     for (const item of productItems) {
       if (item.productName && item.productName.trim()) {
         const pName = item.productName.trim();
+        const pTech = (item.technicalName || '').trim();
         const existing = await Product.findOne({ name: { $regex: `^${pName}$`, $options: 'i' }, isDeleted: false });
         if (!existing) {
           const code = `PRD-${Math.floor(100000 + Math.random() * 900000)}`;
           await Product.create({
             productCode: code,
             name: pName,
+            technicalName: pTech,
             category: 'Crop Protection',
             unit: (item.weight && item.weight.toLowerCase().includes('l')) ? 'Ltr' : 'kg',
             packingSize: item.weight || '1 kg',
@@ -77,6 +79,9 @@ const createPurchase = async (req, res) => {
             minStockThreshold: 20,
             description: `Auto-registered from Purchase Invoice #${invoiceNumber}`
           });
+        } else if (pTech && !existing.technicalName) {
+          existing.technicalName = pTech;
+          await existing.save();
         }
       }
     }
@@ -100,6 +105,7 @@ const createPurchase = async (req, res) => {
       transport: transport || '',
       lrNumber: lrNumber || '',
       productName: firstItem.productName,
+      technicalName: firstItem.technicalName || '',
       hsnCode: firstItem.hsnCode || '',
       batchNumber: firstItem.batchNumber,
       packing: firstItem.packing || firstItem.weight || '1 kg',
@@ -131,6 +137,7 @@ const createPurchase = async (req, res) => {
           barcode,
           purchaseId: purchase._id,
           productName: item.productName,
+          technicalName: item.technicalName || '',
           manufacturer,
           hsnCode: item.hsnCode || '',
           batchNumber: item.batchNumber,
