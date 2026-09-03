@@ -348,67 +348,69 @@ const downloadDeliveryStatementPdf = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Dispatch record not found.' });
     }
 
-    const doc = new PDFDocument({ margin: 40, size: 'A4' });
+    // A5 Size Page Layout (419.53 x 595.28 points) for Delivery Box Attachment
+    const doc = new PDFDocument({ margin: 20, size: 'A5' });
 
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `inline; filename="Delivery_Statement_${dispatch.dispatchNo}.pdf"`);
+    res.setHeader('Content-Disposition', `inline; filename="Delivery_Statement_${dispatch.dispatchNo}_A5.pdf"`);
 
     doc.pipe(res);
 
     // Color Theme (#0F6E56)
     const primaryColor = '#0F6E56';
 
-    // Header Banner
-    doc.rect(40, 40, 515, 65).fill(primaryColor);
-    doc.fillColor('#FFFFFF').fontSize(20).text('VANIKI CROP SCIENCE', 55, 52, { bold: true });
-    doc.fontSize(11).text('WAREHOUSE DELIVERY STATEMENT & HANDOVER SHEET', 55, 78);
+    // A5 Header Banner (x: 20, y: 20, width: 379.5, height: 44)
+    doc.rect(20, 20, 379.5, 44).fill(primaryColor);
+    doc.fillColor('#FFFFFF').fontSize(13).text('VANIKI CROP SCIENCE', 28, 27, { bold: true });
+    doc.fontSize(6.5).text('WAREHOUSE DELIVERY STATEMENT & BOX PACKING SLIP', 28, 44);
 
-    // Document Metadata Right Box
-    doc.fillColor('#000000').fontSize(10);
-    doc.text(`Statement No: ${dispatch.dispatchNo}`, 380, 52, { align: 'right' });
-    doc.text(`Date: ${new Date(dispatch.dispatchDate).toLocaleDateString()}`, 380, 68, { align: 'right' });
-    doc.text(`Invoice No: ${dispatch.salesInvoiceNo}`, 380, 84, { align: 'right' });
+    // Document Metadata Right Box (A5)
+    doc.fillColor('#FFFFFF').fontSize(7);
+    doc.text(`Statement No: #${dispatch.dispatchNo}`, 240, 27, { align: 'right', width: 150, bold: true });
+    doc.text(`Date: ${new Date(dispatch.dispatchDate || Date.now()).toLocaleDateString()}`, 240, 37, { align: 'right', width: 150 });
+    doc.text(`Invoice No: #${dispatch.salesInvoiceNo}`, 240, 47, { align: 'right', width: 150, bold: true });
 
-    doc.moveDown(3);
+    // Dealer & Logistics Grid Section (A5)
+    let infoY = 70;
+    doc.fillColor(primaryColor).fontSize(8.5).text('DEALER & DELIVERY DESTINATION', 20, infoY, { bold: true });
+    doc.text('COURIER & LOGISTICS', 215, infoY, { bold: true });
+    doc.strokeColor(primaryColor).lineWidth(0.75).moveTo(20, infoY + 11).lineTo(399.5, infoY + 11).stroke();
 
-    // Company & Dealer Section Grid
-    doc.fillColor(primaryColor).fontSize(12).text('DEALER & DELIVERY DETAILS', 40, 125, { bold: true });
-    doc.strokeColor(primaryColor).lineWidth(1).moveTo(40, 140).lineTo(555, 140).stroke();
+    infoY += 15;
+    doc.fillColor('#333333').fontSize(7);
+    doc.text(`Dealer Name: ${dispatch.dealerId?.dealerName || dispatch.dealerId?.firmName || 'N/A'}`, 20, infoY, { width: 190 });
+    doc.text(`Courier Service: ${dispatch.courierName || 'Direct Logistics'}`, 215, infoY, { width: 180 });
 
-    doc.fillColor('#333333').fontSize(9);
-    doc.text(`Dealer Name: ${dispatch.dealerId?.dealerName || 'N/A'}`, 40, 150);
-    doc.text(`Garage Name: ${dispatch.dealerId?.garageName || 'N/A'}`, 40, 165);
-    doc.text(`GST Number: ${dispatch.dealerId?.gstNumber || 'N/A'}`, 40, 180);
-    doc.text(`Contact Phone: ${dispatch.dealerId?.phone || 'N/A'}`, 40, 195);
-    doc.text(`Address: ${dispatch.dealerId?.address}, ${dispatch.dealerId?.city}, ${dispatch.dealerId?.state} - ${dispatch.dealerId?.pincode}`, 40, 210);
+    infoY += 10;
+    doc.text(`Garage/Store: ${dispatch.dealerId?.garageName || 'Main Store'}`, 20, infoY, { width: 190 });
+    doc.text(`Vehicle Number: ${dispatch.vehicleNumber || 'N/A'}`, 215, infoY, { width: 180 });
 
-    // Transport Details Box
-    doc.fillColor(primaryColor).fontSize(12).text('COURIER & LOGISTICS', 320, 125, { bold: true });
-    doc.fillColor('#333333').fontSize(9);
-    doc.text(`Courier Service: ${dispatch.courierName}`, 320, 150);
-    doc.text(`Vehicle Number: ${dispatch.vehicleNumber}`, 320, 165);
-    doc.text(`Driver Name: ${dispatch.driverName}`, 320, 180);
-    doc.text(`Driver Phone: ${dispatch.driverMobile}`, 320, 195);
-    doc.text(`Handover To: ${dispatch.handoverTo}`, 320, 210);
+    infoY += 10;
+    const fullAddr = [dispatch.dealerId?.address, dispatch.dealerId?.city, dispatch.dealerId?.state, dispatch.dealerId?.pincode].filter(Boolean).join(', ') || 'N/A';
+    doc.text(`Address: ${fullAddr}`, 20, infoY, { width: 190 });
+    doc.text(`Driver: ${dispatch.driverName || 'N/A'} (${dispatch.driverMobile || 'N/A'})`, 215, infoY, { width: 180 });
 
-    doc.moveDown(6);
+    infoY += 10;
+    doc.text(`Phone: ${dispatch.dealerId?.phone || 'N/A'} | GSTIN: ${dispatch.dealerId?.gstNumber || 'N/A'}`, 20, infoY, { width: 190 });
+    doc.text(`Handover To: ${dispatch.handoverTo || 'Authorized Delivery Staff'}`, 215, infoY, { width: 180 });
 
-    // Scanned QR Box Items Table with Quantity Column
-    doc.fillColor(primaryColor).fontSize(11).text(`VERIFIED DISPATCHED PRODUCTS SUMMARY (${dispatch.scannedBoxQrIds?.length || 0} TOTAL BOXES)`, 40, 245, { bold: true });
-    doc.strokeColor(primaryColor).lineWidth(1).moveTo(40, 258).lineTo(555, 258).stroke();
+    // Scanned QR Box Items Table (A5)
+    let tableY = infoY + 18;
+    doc.fillColor(primaryColor).fontSize(8.5).text(`VERIFIED DISPATCHED PRODUCTS SUMMARY (${dispatch.scannedBoxQrIds?.length || 0} TOTAL BOXES)`, 20, tableY, { bold: true });
+    doc.strokeColor(primaryColor).lineWidth(0.75).moveTo(20, tableY + 11).lineTo(399.5, tableY + 11).stroke();
 
-    let y = 268;
-    doc.fillColor('#1E293B').fontSize(8.5);
-    doc.text('S.No', 42, y, { bold: true });
-    doc.text('Product Name & Composition', 72, y, { bold: true, width: 160 });
-    doc.text('Batch No.', 235, y, { bold: true, width: 75 });
-    doc.text('Packing', 315, y, { bold: true, width: 55 });
-    doc.text('Qty (Boxes)', 375, y, { bold: true, width: 65, align: 'center' });
-    doc.text('Verified QR IDs Range', 445, y, { bold: true, width: 110 });
+    tableY += 14;
+    doc.fillColor('#1E293B').fontSize(7);
+    doc.text('S.No', 22, tableY, { bold: true });
+    doc.text('Product & Composition', 44, tableY, { bold: true, width: 130 });
+    doc.text('Batch No.', 176, tableY, { bold: true, width: 55 });
+    doc.text('Packing', 233, tableY, { bold: true, width: 42 });
+    doc.text('Qty (Boxes)', 277, tableY, { bold: true, width: 48, align: 'center' });
+    doc.text('QR IDs Range', 327, tableY, { bold: true, width: 72 });
 
-    y += 14;
-    doc.strokeColor('#CBD5E1').lineWidth(0.5).moveTo(40, y).lineTo(555, y).stroke();
-    y += 6;
+    tableY += 11;
+    doc.strokeColor('#CBD5E1').lineWidth(0.5).moveTo(20, tableY).lineTo(399.5, tableY).stroke();
+    tableY += 4;
 
     const boxes = await StockBox.find({ qrId: { $in: dispatch.scannedBoxQrIds || [] } });
 
@@ -435,59 +437,59 @@ const downloadDeliveryStatementPdf = async (req, res) => {
     const groupedItems = Array.from(groupMap.values());
 
     groupedItems.forEach((item, idx) => {
-      if (y > 670) {
+      if (tableY > 500) {
         doc.addPage();
-        y = 50;
+        tableY = 30;
       }
 
       const qrSummary = item.qrIds.length > 2 
-        ? `${item.qrIds[0]} ... ${item.qrIds[item.qrIds.length - 1]} (${item.qrIds.length})` 
+        ? `${item.qrIds[0]}..${item.qrIds[item.qrIds.length - 1]} (${item.qrIds.length})` 
         : item.qrIds.join(', ');
 
-      doc.fillColor('#1E293B').fontSize(8.5);
-      doc.text(`${idx + 1}`, 42, y);
+      doc.fillColor('#1E293B').fontSize(7);
+      doc.text(`${idx + 1}`, 22, tableY);
 
       // Product + Technical Name
       let pDisplay = item.productName;
       if (item.technicalName) {
         pDisplay += `\n(${item.technicalName})`;
       }
-      doc.text(pDisplay, 72, y, { width: 155 });
-      doc.text(item.batchNumber, 235, y, { width: 75 });
-      doc.text(item.packing, 315, y, { width: 55 });
+      doc.text(pDisplay, 44, tableY, { width: 128 });
+      doc.text(item.batchNumber, 176, tableY, { width: 55 });
+      doc.text(item.packing, 233, tableY, { width: 42 });
 
       // Quantity (Boxes) in bold highlight
-      doc.fillColor(primaryColor).text(`${item.quantity} Boxes`, 375, y, { bold: true, width: 65, align: 'center' });
+      doc.fillColor(primaryColor).text(`${item.quantity} Boxes`, 277, tableY, { bold: true, width: 48, align: 'center' });
 
       // QR summary
-      doc.fillColor('#475569').text(qrSummary, 445, y, { width: 110 });
+      doc.fillColor('#475569').text(qrSummary, 327, tableY, { width: 72 });
 
-      const rowHeight = item.technicalName ? 26 : 18;
-      y += rowHeight;
-      doc.strokeColor('#F1F5F9').lineWidth(0.5).moveTo(40, y).lineTo(555, y).stroke();
-      y += 4;
+      const rowHeight = item.technicalName ? 20 : 13;
+      tableY += rowHeight;
+      doc.strokeColor('#F1F5F9').lineWidth(0.5).moveTo(20, tableY).lineTo(399.5, tableY).stroke();
+      tableY += 3;
     });
 
-    // Total summary bar
-    y += 6;
-    doc.rect(40, y, 515, 20).fill('#F8FAFC');
-    doc.fillColor(primaryColor).fontSize(9).text(`TOTAL DISPATCHED: ${dispatch.scannedBoxQrIds?.length || 0} VERIFIED BOXES`, 48, y + 5, { bold: true });
-    y += 26;
+    // Total summary bar (A5)
+    tableY += 4;
+    doc.rect(20, tableY, 379.5, 16).fill('#F8FAFC');
+    doc.fillColor(primaryColor).fontSize(7.5).text(`TOTAL DISPATCHED: ${dispatch.scannedBoxQrIds?.length || 0} VERIFIED BOXES`, 26, tableY + 4, { bold: true });
+    tableY += 22;
 
-    // Signatures Section
-    y = Math.max(y + 40, 680);
-    doc.strokeColor('#CBD5E1').lineWidth(1).moveTo(40, y).lineTo(555, y).stroke();
-    y += 30;
+    // Signatures Section (A5)
+    tableY = Math.max(tableY + 15, 520);
+    doc.strokeColor('#CBD5E1').lineWidth(0.75).moveTo(20, tableY).lineTo(399.5, tableY).stroke();
+    tableY += 12;
 
-    doc.fillColor('#000000').fontSize(9);
-    doc.text('Prepared By:', 50, y);
-    doc.text(`${dispatch.verifiedBy}`, 50, y + 15, { bold: true });
+    doc.fillColor('#000000').fontSize(7);
+    doc.text('Prepared By (Warehouse):', 25, tableY);
+    doc.text(`${dispatch.verifiedBy || 'Warehouse Team'}`, 25, tableY + 10, { bold: true });
 
-    doc.text('Driver Signature:', 240, y);
-    doc.text('__________________', 240, y + 15);
+    doc.text('Driver Handover Signature:', 155, tableY);
+    doc.text('___________________', 155, tableY + 10);
 
-    doc.text('Dealer Receiver Signature:', 420, y);
-    doc.text('__________________', 420, y + 15);
+    doc.text('Dealer Received Signature:', 285, tableY);
+    doc.text('___________________', 285, tableY + 10);
 
     doc.end();
   } catch (err) {
