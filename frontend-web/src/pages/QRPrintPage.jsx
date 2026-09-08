@@ -37,6 +37,8 @@ export default function QRPrintPage() {
   const [expandedInvoices, setExpandedInvoices] = useState({});
   const [viewMode, setViewMode] = useState('grouped'); // Default: 'grouped' (Purchase Invoice Accordion List View)
   const [printPreset, setPrintPreset] = useState(singleQrParam ? '1' : 'all');
+  const [isLocalPrinterReady, setIsLocalPrinterReady] = useState(false);
+  const [printingStatus, setPrintingStatus] = useState(null);
   const [printerFormat, setPrinterFormat] = useState(() => {
     try {
       return localStorage.getItem('vaniki_qr_printer_format') || 'tsc-2up-50x25';
@@ -44,6 +46,27 @@ export default function QRPrintPage() {
       return 'tsc-2up-50x25';
     }
   });
+
+  // Check local printer daemon
+  useEffect(() => {
+    checkLocalPrinter();
+    const interval = setInterval(checkLocalPrinter, 4000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const checkLocalPrinter = async () => {
+    try {
+      const res = await fetch('http://127.0.0.1:9191/status', { method: 'GET' });
+      const data = await res.json();
+      if (data && data.success && data.printer === 'TE244') {
+        setIsLocalPrinterReady(true);
+      } else {
+        setIsLocalPrinterReady(false);
+      }
+    } catch (e) {
+      setIsLocalPrinterReady(false);
+    }
+  };
 
   // Inject dynamic @page size for TSC thermal rolls vs sheet paper
   useEffect(() => {
@@ -238,20 +261,42 @@ export default function QRPrintPage() {
     }
   };
 
-  // Print Single QR immediately
-  const handlePrintSingle = (boxId) => {
-    setSelectedBoxIds([boxId]);
-    setPrintPreset('1');
-    setTimeout(() => {
-      window.print();
-    }, 150);
+  const printBoxesDirectly = async (boxesToPrint) => {
+    if (!boxesToPrint || boxesToPrint.length === 0) return;
+
+    if (isLocalPrinterReady) {
+      setPrintingStatus({ type: 'loading', message: `Sending ${boxesToPrint.length} sticker(s) directly to TSC TE244...` });
+      try {
+        const res = await fetch('http://127.0.0.1:9191/print-boxes', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ boxes: boxesToPrint })
+        });
+        const data = await res.json();
+        if (data.success) {
+          setPrintingStatus({ type: 'success', message: `✅ Successfully printed ${boxesToPrint.length} sticker(s) on TSC TE244!` });
+          setTimeout(() => setPrintingStatus(null), 3500);
+          return;
+        }
+      } catch (err) {
+        console.error('Direct TSPL print failed:', err);
+      }
+    }
+
+    setPrintingStatus({ type: 'info', message: 'Opening browser print dialog...' });
+    setTimeout(() => setPrintingStatus(null), 1500);
+    window.print();
   };
 
-  // Test Print 1 QR on Left label of 2-Across roll
-  const handleSelectFirst1AndPrint = () => {
-    if (boxes.length > 0) {
-      const firstBox = boxes[0];
-      setSelectedBoxIds([firstBox._id]);
+  // Print Single QR immediately
+  const handlePrintSingle = (boxId) => {
+    const targetBox = boxes.find(b => b._id === boxId);
+    if (!targetBox) return;
+
+    if (isLocalPrinterReady) {
+      printBoxesDirectly([targetBox]);
+    } else {
+      setSelectedBoxIds([boxId]);
       setPrintPreset('1');
       setTimeout(() => {
         window.print();
@@ -259,17 +304,41 @@ export default function QRPrintPage() {
     }
   };
 
+  // Test Print 1 QR on Left label of 2-Across roll
+  const handleSelectFirst1AndPrint = () => {
+    if (boxes.length > 0) {
+      const firstBox = boxes[0];
+      if (isLocalPrinterReady) {
+        printBoxesDirectly([firstBox]);
+      } else {
+        setSelectedBoxIds([firstBox._id]);
+        setPrintPreset('1');
+        setTimeout(() => {
+          window.print();
+        }, 150);
+      }
+    }
+  };
+
   // Print Entire Purchase Invoice Group
   const handlePrintInvoiceGroup = (group) => {
-    const groupBoxIds = group.boxes.map(b => b._id);
-    setSelectedBoxIds(prev => Array.from(new Set([...prev, ...groupBoxIds])));
-    setTimeout(() => {
-      window.print();
-    }, 150);
+    if (isLocalPrinterReady) {
+      printBoxesDirectly(group.boxes);
+    } else {
+      const groupBoxIds = group.boxes.map(b => b._id);
+      setSelectedBoxIds(prev => Array.from(new Set([...prev, ...groupBoxIds])));
+      setTimeout(() => {
+        window.print();
+      }, 150);
+    }
   };
 
   const handleTriggerPrint = () => {
-    window.print();
+    if (isLocalPrinterReady) {
+      printBoxesDirectly(boxesToRender);
+    } else {
+      window.print();
+    }
   };
 
   const boxesToRender = boxes.filter(b => selectedBoxIds.includes(b._id));
@@ -345,7 +414,7 @@ export default function QRPrintPage() {
             title="Print only 1 sticker on Left label of roll"
           >
             <Zap className="w-3.5 h-3.5 fill-current" />
-            <span>Test Print 1 QR</span>
+            <span>{isLocalPrinterReady ? '⚡ Direct Print 1 QR' : 'Test Print 1 QR'}</span>
           </button>
 
           {/* Main Print Trigger Button */}
@@ -355,10 +424,26 @@ export default function QRPrintPage() {
             className="bg-[#0F6E56] hover:bg-[#0B5442] disabled:opacity-50 disabled:cursor-not-allowed text-white font-extrabold text-xs px-5 py-2.5 rounded-xl shadow-lg shadow-emerald-950/20 transition-all flex items-center gap-2"
           >
             <Printer className="w-4 h-4" />
-            <span>Print {boxesToRender.length} Selected Sticker{boxesToRender.length === 1 ? '' : 's'}</span>
+            <span>{isLocalPrinterReady ? '⚡ Direct Print' : 'Print'} {boxesToRender.length} Selected Sticker{boxesToRender.length === 1 ? '' : 's'}</span>
           </button>
         </div>
       </div>
+
+      {/* Direct Print Status Toast */}
+      {printingStatus && (
+        <div className={`no-print p-3 rounded-xl text-xs font-bold flex items-center justify-between shadow-md transition-all ${
+          printingStatus.type === 'loading'
+            ? 'bg-amber-50 text-amber-800 border border-amber-200'
+            : printingStatus.type === 'success'
+            ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+            : 'bg-blue-50 text-blue-800 border border-blue-200'
+        }`}>
+          <div className="flex items-center gap-2">
+            <span className="text-base">{printingStatus.type === 'loading' ? '⏳' : printingStatus.type === 'success' ? '✅' : 'ℹ️'}</span>
+            <span>{printingStatus.message}</span>
+          </div>
+        </div>
+      )}
 
       {/* TSC TE244 & Label Roll Setup Bar (no-print) */}
       <div className="no-print bg-slate-900 text-white rounded-2xl p-4 border border-slate-800 shadow-md flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
@@ -371,12 +456,21 @@ export default function QRPrintPage() {
               <h3 className="text-xs font-black uppercase tracking-wider text-emerald-400">
                 Attached Printer & 2-Across Thermal Roll Setup
               </h3>
-              <span className="text-[10px] bg-emerald-500/30 text-emerald-300 font-bold px-2 py-0.5 rounded-full border border-emerald-500/40">
-                TSC TE244 2-UP Roll Active
-              </span>
+              {isLocalPrinterReady ? (
+                <span className="text-[10px] bg-emerald-500/30 text-emerald-300 font-bold px-2 py-0.5 rounded-full border border-emerald-500/40 flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                  TSC TE244 USB Connected (Instant 1-Click Print)
+                </span>
+              ) : (
+                <span className="text-[10px] bg-slate-700 text-slate-300 font-bold px-2 py-0.5 rounded-full border border-slate-600">
+                  Browser Print Mode
+                </span>
+              )}
             </div>
             <p className="text-[11px] text-slate-300 mt-0.5">
-              Aapke roll ke hisaab se 2-Across (Left / Right) stickers print honge. Destination: <strong className="text-emerald-300">TE244</strong> aur Margins: <strong className="text-emerald-300">None</strong> rakhein.
+              {isLocalPrinterReady
+                ? '🟢 Local TSC TE244 connected! Clicking print will immediately output razor-sharp stickers with 0 browser popups.'
+                : 'Aapke roll ke hisaab se 2-Across (Left / Right) stickers print honge. Destination: TE244 aur Margins: None rakhein.'}
             </p>
           </div>
         </div>

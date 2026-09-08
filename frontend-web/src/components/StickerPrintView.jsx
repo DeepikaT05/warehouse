@@ -94,29 +94,14 @@ export default function StickerPrintView({
             </p>
           </div>
 
-          <div className="bg-white p-0.5 rounded border border-black flex items-center justify-center shrink-0">
+          <div className="bg-white p-0.5 rounded border border-slate-900 flex items-center justify-center shrink-0">
             <QRCodeSVG
               value={box.qrId}
-              size={is2UpMode ? 38 : (printerFormat === 'tsc-50x25' ? 44 : 56)}
+              size={is2UpMode ? 48 : (printerFormat === 'tsc-50x25' ? 52 : 62)}
               level="M"
               includeMargin={false}
             />
           </div>
-        </div>
-
-        {/* Barcode Footer */}
-        <div className="text-center border-t border-black pt-0.5 mt-0.5 flex flex-col items-center justify-center">
-          <Barcode
-            value={box.barcode || box.qrId.replace('-', '')}
-            height={is2UpMode ? 10 : (printerFormat === 'tsc-50x25' ? 12 : 16)}
-            width={1.05}
-            fontSize={7}
-            margin={0}
-            displayValue={false}
-          />
-          <span className="font-mono font-bold text-[6.5px] text-black tracking-widest leading-none mt-0.5">
-            *{box.qrId}*
-          </span>
         </div>
       </div>
     );
