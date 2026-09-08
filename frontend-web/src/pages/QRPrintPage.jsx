@@ -39,9 +39,9 @@ export default function QRPrintPage() {
   const [printPreset, setPrintPreset] = useState(singleQrParam ? '1' : 'all');
   const [printerFormat, setPrinterFormat] = useState(() => {
     try {
-      return localStorage.getItem('vaniki_qr_printer_format') || 'tsc-50x50';
+      return localStorage.getItem('vaniki_qr_printer_format') || 'tsc-2up-50x25';
     } catch (e) {
-      return 'tsc-50x50';
+      return 'tsc-2up-50x25';
     }
   });
 
@@ -247,6 +247,18 @@ export default function QRPrintPage() {
     }, 150);
   };
 
+  // Test Print 1 QR on Left label of 2-Across roll
+  const handleSelectFirst1AndPrint = () => {
+    if (boxes.length > 0) {
+      const firstBox = boxes[0];
+      setSelectedBoxIds([firstBox._id]);
+      setPrintPreset('1');
+      setTimeout(() => {
+        window.print();
+      }, 150);
+    }
+  };
+
   // Print Entire Purchase Invoice Group
   const handlePrintInvoiceGroup = (group) => {
     const groupBoxIds = group.boxes.map(b => b._id);
@@ -325,6 +337,17 @@ export default function QRPrintPage() {
             </button>
           </div>
 
+          {/* Test Print 1 QR Button */}
+          <button
+            onClick={handleSelectFirst1AndPrint}
+            disabled={boxes.length === 0}
+            className="bg-amber-400 hover:bg-amber-500 text-slate-900 font-extrabold text-xs px-3.5 py-2.5 rounded-xl shadow transition-all flex items-center gap-1.5"
+            title="Print only 1 sticker on Left label of roll"
+          >
+            <Zap className="w-3.5 h-3.5 fill-current" />
+            <span>Test Print 1 QR</span>
+          </button>
+
           {/* Main Print Trigger Button */}
           <button
             onClick={handleTriggerPrint}
@@ -346,29 +369,29 @@ export default function QRPrintPage() {
           <div>
             <div className="flex items-center gap-2">
               <h3 className="text-xs font-black uppercase tracking-wider text-emerald-400">
-                Attached Printer & Thermal Roll Setup
+                Attached Printer & 2-Across Thermal Roll Setup
               </h3>
               <span className="text-[10px] bg-emerald-500/30 text-emerald-300 font-bold px-2 py-0.5 rounded-full border border-emerald-500/40">
-                TSC TE244 Active
+                TSC TE244 2-UP Roll Active
               </span>
             </div>
             <p className="text-[11px] text-slate-300 mt-0.5">
-              TSC thermal roll me 1-by-1 label print hoga. Chrome Print me Destination: <strong className="text-emerald-300">TE244</strong> aur Margins: <strong className="text-emerald-300">None</strong> select karein.
+              Aapke roll ke hisaab se 2-Across (Left / Right) stickers print honge. Destination: <strong className="text-emerald-300">TE244</strong> aur Margins: <strong className="text-emerald-300">None</strong> rakhein.
             </p>
           </div>
         </div>
 
         <div className="flex items-center gap-2 shrink-0 bg-slate-800/90 p-1.5 rounded-xl border border-slate-700">
-          <span className="text-[11px] font-bold text-slate-300 pl-2">Label Size:</span>
+          <span className="text-[11px] font-bold text-slate-300 pl-2">Roll Mode:</span>
           <select
             value={printerFormat}
             onChange={(e) => setPrinterFormat(e.target.value)}
             className="bg-slate-900 text-white text-xs font-bold px-3 py-1.5 rounded-lg border border-slate-600 focus:outline-none focus:ring-2 focus:ring-[#0F6E56] cursor-pointer"
           >
-            <option value="tsc-50x50">🏷️ TSC Thermal Roll (50mm × 50mm / 2" × 2") - Default</option>
-            <option value="tsc-50x25">🏷️ TSC Thermal Roll (50mm × 25mm / 2" × 1")</option>
+            <option value="tsc-2up-50x25">🏷️ TSC 2-Across Roll (2 Labels Side-by-Side) - Default</option>
+            <option value="tsc-50x50">🏷️ TSC 1-Across Roll (50mm × 50mm / 2" × 2")</option>
+            <option value="tsc-50x25">🏷️ TSC 1-Across Roll (50mm × 25mm / 2" × 1")</option>
             <option value="tsc-100x50">🏷️ TSC Large Roll (100mm × 50mm / 4" × 2")</option>
-            <option value="tsc-2up-50x25">🏷️ TSC 2-Across Roll (2 Labels Side-by-Side)</option>
             <option value="sheet-a4">📄 A4 Paper Sheet (Multi-Sticker Grid)</option>
           </select>
         </div>
