@@ -37,6 +37,42 @@ export default function QRPrintPage() {
   const [expandedInvoices, setExpandedInvoices] = useState({});
   const [viewMode, setViewMode] = useState('grouped'); // Default: 'grouped' (Purchase Invoice Accordion List View)
   const [printPreset, setPrintPreset] = useState(singleQrParam ? '1' : 'all');
+  const [printerFormat, setPrinterFormat] = useState(() => {
+    try {
+      return localStorage.getItem('vaniki_qr_printer_format') || 'tsc-50x50';
+    } catch (e) {
+      return 'tsc-50x50';
+    }
+  });
+
+  // Inject dynamic @page size for TSC thermal rolls vs sheet paper
+  useEffect(() => {
+    let styleEl = document.getElementById('qr-print-page-style');
+    if (!styleEl) {
+      styleEl = document.createElement('style');
+      styleEl.id = 'qr-print-page-style';
+      document.head.appendChild(styleEl);
+    }
+
+    let pageCss = '';
+    if (printerFormat === 'tsc-50x50') {
+      pageCss = `@media print { @page { size: 50mm 50mm; margin: 0mm !important; } }`;
+    } else if (printerFormat === 'tsc-50x25') {
+      pageCss = `@media print { @page { size: 50mm 25mm; margin: 0mm !important; } }`;
+    } else if (printerFormat === 'tsc-100x50') {
+      pageCss = `@media print { @page { size: 100mm 50mm; margin: 0mm !important; } }`;
+    } else if (printerFormat === 'tsc-2up-50x25') {
+      pageCss = `@media print { @page { size: 105mm 25mm; margin: 0mm !important; } }`;
+    } else {
+      pageCss = `@media print { @page { size: A4 portrait; margin: 8mm !important; } }`;
+    }
+
+    styleEl.innerHTML = pageCss;
+
+    try {
+      localStorage.setItem('vaniki_qr_printer_format', printerFormat);
+    } catch (e) {}
+  }, [printerFormat]);
 
   useEffect(() => {
     fetchBoxesToPrint();
@@ -298,6 +334,43 @@ export default function QRPrintPage() {
             <Printer className="w-4 h-4" />
             <span>Print {boxesToRender.length} Selected Sticker{boxesToRender.length === 1 ? '' : 's'}</span>
           </button>
+        </div>
+      </div>
+
+      {/* TSC TE244 & Label Roll Setup Bar (no-print) */}
+      <div className="no-print bg-slate-900 text-white rounded-2xl p-4 border border-slate-800 shadow-md flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-lg font-bold">
+            🖨️
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h3 className="text-xs font-black uppercase tracking-wider text-emerald-400">
+                Attached Printer & Thermal Roll Setup
+              </h3>
+              <span className="text-[10px] bg-emerald-500/30 text-emerald-300 font-bold px-2 py-0.5 rounded-full border border-emerald-500/40">
+                TSC TE244 Active
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-300 mt-0.5">
+              TSC thermal roll me 1-by-1 label print hoga. Chrome Print me Destination: <strong className="text-emerald-300">TE244</strong> aur Margins: <strong className="text-emerald-300">None</strong> select karein.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 shrink-0 bg-slate-800/90 p-1.5 rounded-xl border border-slate-700">
+          <span className="text-[11px] font-bold text-slate-300 pl-2">Label Size:</span>
+          <select
+            value={printerFormat}
+            onChange={(e) => setPrinterFormat(e.target.value)}
+            className="bg-slate-900 text-white text-xs font-bold px-3 py-1.5 rounded-lg border border-slate-600 focus:outline-none focus:ring-2 focus:ring-[#0F6E56] cursor-pointer"
+          >
+            <option value="tsc-50x50">🏷️ TSC Thermal Roll (50mm × 50mm / 2" × 2") - Default</option>
+            <option value="tsc-50x25">🏷️ TSC Thermal Roll (50mm × 25mm / 2" × 1")</option>
+            <option value="tsc-100x50">🏷️ TSC Large Roll (100mm × 50mm / 4" × 2")</option>
+            <option value="tsc-2up-50x25">🏷️ TSC 2-Across Roll (2 Labels Side-by-Side)</option>
+            <option value="sheet-a4">📄 A4 Paper Sheet (Multi-Sticker Grid)</option>
+          </select>
         </div>
       </div>
 
@@ -708,6 +781,7 @@ export default function QRPrintPage() {
               selectedBoxIds={selectedBoxIds}
               onToggleSelect={handleToggleSelectBox}
               onPrintSingle={handlePrintSingle}
+              printerFormat={printerFormat}
             />
           </div>
         </div>

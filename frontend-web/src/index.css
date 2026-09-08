@@ -19,11 +19,12 @@
 /* Custom Print Styles for QR Thermal Stickers and A5 Delivery Statements */
 @media print {
   @page {
-    size: A5 portrait;
-    margin: 6mm;
+    margin: 0mm !important;
   }
   body {
     background-color: #FFFFFF !important;
+    margin: 0 !important;
+    padding: 0 !important;
   }
   body * {
     visibility: hidden;
@@ -38,7 +39,7 @@
     top: 0;
     width: 100% !important;
     margin: 0 !important;
-    padding: 10px !important;
+    padding: 0 !important;
     border: none !important;
     background: #FFFFFF !important;
   }
