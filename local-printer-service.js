@@ -20,7 +20,7 @@ function buildTSPLForPair(leftBox, rightBox) {
     cmd += `TEXT 20,82,"2",0,1,1,"Batch: ${batch}"\n`;
     cmd += `TEXT 20,112,"2",0,1,1,"Wt: ${wt}"\n`;
     cmd += `TEXT 20,146,"3",0,1,1,"ID: ${qr}"\n`;
-    cmd += `QRCODE 260,48,M,5,A,0,"${qr}"\n`;
+    cmd += `QRCODE 260,48,M,5,A,0,M2,S7,"${qr}"\n`;
   }
 
   // Right Label (Offset +430 dots)
@@ -36,7 +36,7 @@ function buildTSPLForPair(leftBox, rightBox) {
     cmd += `TEXT 450,82,"2",0,1,1,"Batch: ${batch}"\n`;
     cmd += `TEXT 450,112,"2",0,1,1,"Wt: ${wt}"\n`;
     cmd += `TEXT 450,146,"3",0,1,1,"ID: ${qr}"\n`;
-    cmd += `QRCODE 690,48,M,5,A,0,"${qr}"\n`;
+    cmd += `QRCODE 690,48,M,5,A,0,M2,S7,"${qr}"\n`;
   }
 
   cmd += `PRINT 1,1\n`;

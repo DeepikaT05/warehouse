@@ -88,6 +88,29 @@ export default function DispatchVerify() {
     }
   };
 
+  const playScanSound = (isSuccess) => {
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      if (isSuccess) {
+        osc.frequency.setValueAtTime(880, ctx.currentTime);
+        gain.gain.setValueAtTime(0.3, ctx.currentTime);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.18);
+      } else {
+        osc.frequency.setValueAtTime(320, ctx.currentTime);
+        gain.gain.setValueAtTime(0.4, ctx.currentTime);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.35);
+      }
+    } catch (e) {}
+  };
+
   const handleVerifyScan = async (qrIdToTest) => {
     setDispatchError('');
     let targetQr = (qrIdToTest || scanQrInput).trim().toUpperCase();
@@ -104,12 +127,14 @@ export default function DispatchVerify() {
 
       if (res.data && res.data.verified) {
         if (verifiedBoxes.some(b => b.qrId === res.data.box.qrId)) {
+          playScanSound(false);
           setScanStatus({
             type: 'RED',
             title: 'Already Scanned in Batch',
             reason: `Box ${res.data.box.qrId} is already added to this dispatch list!`
           });
         } else {
+          playScanSound(true);
           setScanStatus({
             type: 'GREEN',
             title: res.data.title || '✓ VERIFIED - READY FOR DISPATCH',
@@ -121,6 +146,7 @@ export default function DispatchVerify() {
         setScanQrInput('');
         return;
       } else if (res.data && !res.data.verified) {
+        playScanSound(false);
         setScanStatus({
           type: 'RED',
           title: res.data.title || '✖ MISMATCH DETECTED',
@@ -130,6 +156,7 @@ export default function DispatchVerify() {
         return;
       }
     } catch (err) {
+      playScanSound(false);
       setScanStatus({
         type: 'RED',
         title: '✖ VERIFICATION ERROR',
@@ -400,37 +427,65 @@ export default function DispatchVerify() {
         </form>
       </div>
 
-      {/* Dynamic GREEN / RED Verification Screen Overlay */}
+      {/* Dynamic GREEN / RED Verification Centered Modal Overlay */}
       {scanStatus && (
-        <div
-          className={`rounded-3xl p-8 text-white shadow-2xl transition-all ${scanStatus.type === 'GREEN'
-              ? 'bg-gradient-to-r from-[#1D9E75] to-[#0F6E56] border-4 border-emerald-300'
-              : 'bg-gradient-to-r from-[#E53E3E] to-red-800 border-4 border-red-300'
+        <div className="fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div
+            className={`w-full max-w-lg rounded-3xl p-6 sm:p-8 text-white shadow-2xl transition-all border-4 ${
+              scanStatus.type === 'GREEN'
+                ? 'bg-gradient-to-br from-[#1D9E75] to-[#0B5442] border-emerald-300'
+                : 'bg-gradient-to-br from-red-600 to-red-900 border-red-300'
             }`}
-        >
-          <div className="flex items-center gap-6">
-            <div className="w-16 h-16 rounded-full bg-white/20 flex items-center justify-center shrink-0">
-              {scanStatus.type === 'GREEN' ? (
-                <CheckCircle2 className="w-10 h-10 text-white animate-bounce" />
-              ) : (
-                <XCircle className="w-10 h-10 text-white animate-pulse" />
-              )}
-            </div>
+          >
+            <div className="text-center flex flex-col items-center">
+              <div className="w-20 h-20 rounded-full bg-white/20 flex items-center justify-center mb-4 shadow-inner">
+                {scanStatus.type === 'GREEN' ? (
+                  <CheckCircle2 className="w-12 h-12 text-white animate-bounce" />
+                ) : (
+                  <XCircle className="w-12 h-12 text-white animate-pulse" />
+                )}
+              </div>
 
-            <div className="flex-1 space-y-1">
-              <span className="text-xs font-black uppercase tracking-widest bg-white/20 px-3 py-1 rounded-full">
+              <span className="text-xs font-black uppercase tracking-widest bg-white/20 px-3 py-1 rounded-full mb-2">
                 {scanStatus.type === 'GREEN' ? '✓ VERIFIED - MATCH CONFIRMED' : '✖ ALERT - MISMATCH DETECTED'}
               </span>
-              <h2 className="text-2xl font-black">{scanStatus.title}</h2>
-              <p className="text-sm text-white/90 font-medium">{scanStatus.reason}</p>
-            </div>
+              <h2 className="text-2xl sm:text-3xl font-black mb-2">{scanStatus.title}</h2>
+              <p className="text-sm text-white/95 font-medium max-w-sm mb-6 leading-relaxed">
+                {scanStatus.reason}
+              </p>
 
-            <button
-              onClick={() => setScanStatus(null)}
-              className="bg-white/20 hover:bg-white/30 text-white text-xs font-bold px-4 py-2 rounded-xl transition-colors"
-            >
-              Dismiss
-            </button>
+              {scanStatus.box && (
+                <div className="w-full bg-white/10 rounded-2xl p-4 text-left border border-white/20 mb-6 space-y-1">
+                  <div className="flex justify-between items-center border-b border-white/20 pb-1.5 mb-1.5">
+                    <span className="font-mono font-black text-amber-300 text-sm">{scanStatus.box.qrId}</span>
+                    <span className="text-[10px] uppercase font-bold bg-white/20 px-2 py-0.5 rounded">Status: {scanStatus.box.status || 'Available'}</span>
+                  </div>
+                  <p className="font-bold text-xs">{scanStatus.box.productName}</p>
+                  <p className="text-[11px] text-white/80">Batch: {scanStatus.box.batchNumber || 'N/A'} | Rack: {scanStatus.box.warehouseLocation || 'Warehouse'}</p>
+                </div>
+              )}
+
+              <div className="flex gap-3 w-full">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setScanStatus(null);
+                    setIsScannerOpen(true);
+                  }}
+                  className="flex-1 bg-white text-slate-900 font-extrabold text-sm py-3.5 px-4 rounded-xl shadow-lg hover:bg-slate-100 transition-transform active:scale-95 flex items-center justify-center gap-2"
+                >
+                  <Camera className="w-4 h-4 text-[#0F6E56]" />
+                  <span>Scan Next Box ➔</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setScanStatus(null)}
+                  className="bg-white/20 hover:bg-white/30 text-white font-bold text-xs py-3.5 px-5 rounded-xl transition-colors"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

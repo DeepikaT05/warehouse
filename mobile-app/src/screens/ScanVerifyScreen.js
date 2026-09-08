@@ -298,7 +298,9 @@ export default function ScanVerifyScreen({ route, navigation }) {
         onClose={() => setCameraVisible(false)}
         onScan={(scannedQr) => {
           setCameraVisible(false);
-          handleVerify(scannedQr);
+          setTimeout(() => {
+            handleVerify(scannedQr);
+          }, 350);
         }}
       />
 
@@ -321,9 +323,23 @@ export default function ScanVerifyScreen({ route, navigation }) {
               </View>
             )}
 
-            <TouchableOpacity style={styles.dismissBtn} onPress={() => setScanResult(null)}>
-              <Text style={styles.dismissBtnText}>SCAN NEXT BOX ➔</Text>
-            </TouchableOpacity>
+            <View style={{ flexDirection: 'row', gap: 12, marginTop: 24, width: '100%' }}>
+              <TouchableOpacity
+                style={[styles.dismissBtn, { flex: 1, backgroundColor: '#FFF' }]}
+                onPress={() => {
+                  setScanResult(null);
+                  setTimeout(() => setCameraVisible(true), 200);
+                }}
+              >
+                <Text style={[styles.dismissBtnText, { color: COLORS.slate900 }]}>📷 SCAN NEXT BOX ➔</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.dismissBtn, { width: 90, backgroundColor: 'rgba(255,255,255,0.2)' }]}
+                onPress={() => setScanResult(null)}
+              >
+                <Text style={styles.dismissBtnText}>Close</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </Modal>
       )}
