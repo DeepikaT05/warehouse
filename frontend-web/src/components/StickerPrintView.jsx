@@ -1,6 +1,5 @@
 import React from 'react';
 import { QRCodeSVG } from 'qrcode.react';
-import Barcode from 'react-barcode';
 import { Printer } from 'lucide-react';
 
 export default function StickerPrintView({
@@ -78,7 +77,7 @@ export default function StickerPrintView({
         {/* Content Body: Left Details, Right QR Code */}
         <div className="flex items-center justify-between gap-1.5 my-0.5">
           <div className="text-[8px] leading-tight space-y-0.5 overflow-hidden flex-1">
-            <p className="font-black text-black truncate" title={box.productName}>
+            <p className="font-bold text-black text-[7.5px] leading-tight line-clamp-2" title={box.productName}>
               {box.productName}
             </p>
             {box.technicalName ? (
@@ -86,11 +85,14 @@ export default function StickerPrintView({
                 {box.technicalName}
               </p>
             ) : null}
-            <p className="font-bold text-black text-[7.5px]">
-              <span className="text-slate-600 font-normal">B: </span>{box.batchNumber} | <span className="text-slate-600 font-normal">Wt: </span>{box.packing || box.weight || '1 kg'}
+            <p className="font-semibold text-black text-[7px] leading-tight">
+              <span className="text-slate-600 font-normal">BA: </span>{box.batchNumber}
             </p>
-            <p className="font-black text-[#0F6E56] font-mono tracking-wider text-[8.5px] pt-0.5">
-              {box.qrId}
+            <p className="font-semibold text-black text-[7px] leading-tight">
+              <span className="text-slate-600 font-normal">Wt: </span>{box.petiWeight || box.caseWtStr || box.weight || box.packing || '10 LTR'}
+            </p>
+            <p className="font-bold text-[#0F6E56] font-mono tracking-wider text-[7.5px] leading-tight">
+              ID: {box.qrId} {box.petiTag || (box.petiTitle ? `• ${box.petiTitle}` : '')}
             </p>
           </div>
 
@@ -233,7 +235,6 @@ export default function StickerPrintView({
           {/* Visual Roll Indication (Screen only) */}
           <div className="no-print bg-emerald-50 text-[#0F6E56] border border-emerald-200 rounded-xl p-3 flex items-center justify-between text-xs font-bold">
             <div className="flex items-center gap-2">
-              <span className="text-base">🏷️</span>
               <span>2-Across Roll Mode Active (Matches your TSC roll with 2 stickers per row)</span>
             </div>
             <span className="bg-[#0F6E56] text-white px-2.5 py-0.5 rounded-lg text-[10px]">
