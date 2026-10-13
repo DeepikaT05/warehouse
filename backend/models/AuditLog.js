@@ -13,4 +13,8 @@ const auditLogSchema = new mongoose.Schema({
 });
 
 
+// Query indexes (list/filter/dashboard hot paths)
+auditLogSchema.index({ timestamp: -1 });
+auditLogSchema.index({ user: 1, timestamp: -1 });
+
 module.exports = mongoose.model('AuditLog', auditLogSchema);

@@ -28,7 +28,7 @@ const getProducts = async (req, res) => {
             name: trimmed,
             category: 'Crop Protection',
             unit: (sampleBox?.weight && sampleBox.weight.toLowerCase().includes('l')) ? 'Ltr' : 'kg',
-            packingSize: sampleBox?.weight || '1 kg',
+            packingSize: sampleBox?.weight || sampleBox?.packing || null,
             mrp: Number(sampleBox?.purchaseCost) ? Math.round(Number(sampleBox.purchaseCost) * 1.5) : 500,
             minStockThreshold: 20,
             description: `Auto-synced from Purchase Stock`
@@ -74,7 +74,7 @@ const getProducts = async (req, res) => {
 // Create product (Admin only)
 const createProduct = async (req, res) => {
   try {
-    const { productCode, name, category, unit, packingSize, mrp, minStockThreshold, description } = req.body;
+    const { productCode, name, category, unit, packingSize, conversion, alternateUnit, mrp, minStockThreshold, description } = req.body;
 
     if (!name) {
       return res.status(400).json({ success: false, message: 'Product name is required.' });
@@ -92,7 +92,9 @@ const createProduct = async (req, res) => {
       name,
       category: category || 'Crop Protection',
       unit: unit || 'kg',
-      packingSize: packingSize || '1 kg',
+      packingSize: packingSize || null,
+      conversion: Number(conversion) || 0,
+      alternateUnit: alternateUnit || 'BOX',
       mrp: Number(mrp) || 0,
       minStockThreshold: Number(minStockThreshold) || 20,
       description: description || ''

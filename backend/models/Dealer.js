@@ -12,8 +12,16 @@ const dealerSchema = new mongoose.Schema({
   district: { type: String, required: true },
   city: { type: String, required: true },
   pincode: { type: String, required: true },
-  createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  createdBy: { 
+    type: mongoose.Schema.Types.ObjectId, 
+    ref: 'User',
+    set: v => (v && mongoose.Types.ObjectId.isValid(v) ? v : undefined)
+  },
   createdAt: { type: Date, default: Date.now }
 });
+
+// Query indexes (list/filter/dashboard hot paths)
+dealerSchema.index({ dealerName: 1 });
+dealerSchema.index({ phone: 1 });
 
 module.exports = mongoose.model('Dealer', dealerSchema);

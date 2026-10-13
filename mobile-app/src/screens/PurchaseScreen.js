@@ -36,7 +36,7 @@ export default function PurchaseScreen({ navigation }) {
       });
 
       if (res.data && res.data.success) {
-        Alert.alert('✅ Purchase Saved!', `Logged Purchase! Generated ${res.data.totalBoxesGenerated} box QR codes (${res.data.firstQrId} to ${res.data.lastQrId})`);
+        Alert.alert('Purchase Saved!', `Logged Purchase! Generated ${res.data.totalBoxesGenerated} box QR codes (${res.data.firstQrId} to ${res.data.lastQrId})`);
         navigation.navigate('QRPrint', { purchaseId: res.data.purchase._id });
         return;
       } else {

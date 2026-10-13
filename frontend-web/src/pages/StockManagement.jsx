@@ -34,7 +34,7 @@ export function getPiecesPerPeti(packing) {
   return 10;
 }
 
-export function parsePetiWeights(packing, pcsPerPeti, totalCases, rawWeight) {
+export function parsePetiWeights(packing, pcsPerPeti, totalCases, rawWeight, totalPieces) {
   let unitKgLtr = 1;
   let isLtr = true;
   const pMatch = (packing || '').match(/([\d.]+)\s*(LTR|LT|L\b|ML|GM|G\b|KG|KGS|BAG)/i);
@@ -60,34 +60,69 @@ export function parsePetiWeights(packing, pcsPerPeti, totalCases, rawWeight) {
   const numCases = Number(totalCases) > 0 ? Number(totalCases) : 1;
   let unitLabel = isLtr ? 'LTR' : 'KG';
 
-  let totalVolNum = 0;
-  let totalVolStr = '';
+  // 1 Peti Weight = single unit volume * pieces per peti
+  let caseWtNum = Math.round(unitKgLtr * effConv * 1000) / 1000;
+
   if (rawWeight && String(rawWeight).match(/\d/)) {
     const rm = String(rawWeight).match(/([\d.]+)\s*([A-Za-z]+)?/);
     if (rm) {
-      totalVolNum = parseFloat(rm[1]);
+      const parsedVal = parseFloat(rm[1]);
       const u = rm[2] ? rm[2].toUpperCase() : unitLabel;
       unitLabel = u.includes('LT') ? 'LTR' : (u.includes('KG') ? 'KG' : u);
-      totalVolStr = `${totalVolNum} ${unitLabel}`;
+      if (parsedVal > 0) {
+        if (numCases > 1 && parsedVal > caseWtNum * 1.5) {
+          // parsedVal is total volume for all cases
+          caseWtNum = Math.round((parsedVal / numCases) * 1000) / 1000;
+        } else {
+          // parsedVal is 1-peti weight
+          caseWtNum = parsedVal;
+        }
+      }
     }
   }
 
-  let caseWtNum = 0;
-  if (totalVolNum > 0 && numCases > 0) {
-    caseWtNum = Math.round((totalVolNum / numCases) * 1000) / 1000;
+  // Exact volume calculation: if totalPieces is provided, compute real available volume!
+  let totalVolNum;
+  if (totalPieces !== undefined && totalPieces !== null && Number(totalPieces) >= 0) {
+    totalVolNum = Math.round(unitKgLtr * Number(totalPieces) * 1000) / 1000;
   } else {
-    caseWtNum = Math.round(unitKgLtr * effConv * 1000) / 1000;
     totalVolNum = Math.round(caseWtNum * numCases * 1000) / 1000;
-    totalVolStr = `${totalVolNum} ${unitLabel}`;
   }
-
+  const totalVolStr = `${totalVolNum} ${unitLabel}`;
   const caseWtStr = `${caseWtNum} ${unitLabel}`;
 
-  return { caseWtStr, totalVolStr, unitLabel, caseWtNum };
+  return { caseWtStr, totalVolStr, unitLabel, caseWtNum, unitKgLtr };
 }
 
 export function groupBoxesIntoPetis(boxes, invoiceCases, packing, conversion, rawWeight) {
   if (!boxes || boxes.length === 0) return [];
+
+  // Check if each box in boxes is ALREADY a single Peti (e.g. boxes.length matches invoiceCases)
+  const isOneBoxPerPeti = Number(invoiceCases) > 0 && Math.abs(boxes.length - Number(invoiceCases)) <= 2;
+
+  if (isOneBoxPerPeti || boxes.length === Number(invoiceCases) || boxes.every(b => b.cases === 1)) {
+    return boxes.map((box, idx) => {
+      const petiNum = idx + 1;
+      const bPacking = box.packing || box.weight || packing || '10 LTR';
+      const bConv = Number(box.conversion) > 0 ? Number(box.conversion) : 10;
+      const bWeight = box.weight || parsePetiWeights(bPacking, bConv, 1, box.weight).caseWtStr;
+
+      return {
+        petiNumber: petiNum,
+        petiTitle: `Peti #${petiNum} • ${box.productName || 'Product'} (${bPacking})`,
+        petiWeight: bWeight,
+        productName: box.productName,
+        batchNumber: box.batchNumber,
+        packing: bPacking,
+        totalPieces: bConv,
+        availablePieces: box.status === 'available' ? bConv : 0,
+        firstQr: box.qrId,
+        lastQr: box.qrId,
+        boxes: [box]
+      };
+    });
+  }
+
   let pcsPerPeti = 0;
   if (conversion && Number(conversion) > 0) {
     pcsPerPeti = Number(conversion);
@@ -121,8 +156,8 @@ export function groupBoxesIntoPetis(boxes, invoiceCases, packing, conversion, ra
   return petis;
 }
 
-const SUMMARY_CACHE_KEY = 'vaniki_stock_summary_cache_v9';
-const BOXES_CACHE_PREFIX = 'vaniki_stock_boxes_v9_';
+const SUMMARY_CACHE_KEY = 'vaniki_stock_summary_cache_v12';
+const BOXES_CACHE_PREFIX = 'vaniki_stock_boxes_v12_';
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 // In-memory fallback
@@ -132,7 +167,7 @@ const memBoxesCache = new Map();
 function getCachedSummary() {
   try {
     Object.keys(sessionStorage).forEach(k => {
-      if (k.startsWith('vaniki_stock_') && !k.includes('_v9')) {
+      if (k.startsWith('vaniki_stock_') && !k.includes('_v12')) {
         sessionStorage.removeItem(k);
       }
     });
@@ -345,11 +380,15 @@ export default function StockManagement() {
           setSearchedBoxes(found);
           if (res.data.summary) setSummary(res.data.summary);
 
-          // Auto-expand invoices that contain search results
+          // Auto-expand invoice products that contain search results
           const autoExpand = {};
           found.forEach(b => {
-            const inv = b.purchaseInvoice || 'Unassigned';
-            autoExpand[inv] = true;
+            const invNo = b.purchaseInvoice || 'Unassigned';
+            const pName = b.productName || 'Product';
+            const pPack = b.packing || b.weight || '1 kg';
+            const pBatch = b.batchNumber || '';
+            const k = `${invNo}__${pName}__${pPack}__${pBatch}`;
+            autoExpand[k] = true;
           });
           setExpandedInvoices(autoExpand);
         }
@@ -455,20 +494,26 @@ export default function StockManagement() {
     return Array.from(set).sort();
   }, [invoices]);
 
-  // Group search results by invoice if in search mode
+  // Group search results by product line if in search mode
   const searchInvoiceGroups = useMemo(() => {
     if (!isSearchMode) return [];
     const map = new Map();
     searchedBoxes.forEach(box => {
-      const invKey = box.purchaseInvoice || 'Unassigned';
+      const invNo = box.purchaseInvoice || 'Unassigned';
+      const pName = box.productName || 'Product';
+      const pPack = box.packing || box.weight || '1 kg';
+      const pBatch = box.batchNumber || '';
+      const invKey = `${invNo}__${pName}__${pPack}__${pBatch}`;
       if (!map.has(invKey)) {
         map.set(invKey, {
-          invoiceNo: invKey,
-          productName: box.productName,
-          batchNumber: box.batchNumber,
-          packing: box.packing || box.weight || '1 kg',
-          weight: box.weight || box.packing || '1 kg',
-          warehouseLocation: box.warehouseLocation || 'RAIPUR GODOWN',
+          _id: invKey,
+          groupKey: invKey,
+          invoiceNo: invNo,
+          productName: pName,
+          batchNumber: pBatch,
+          packing: pPack,
+          weight: box.weight || pPack,
+          warehouseLocation: box.warehouseLocation || 'FACTORY GODOWN',
           totalBoxes: 0,
           availableBoxes: 0,
           conversion: Number(box.conversion) || 0,
@@ -484,23 +529,38 @@ export default function StockManagement() {
       }
       const pcsPerPeti = grp.conversion || (box.conversion && Number(box.conversion)) || getPiecesPerPeti(grp.packing || grp.weight);
       grp.conversion = pcsPerPeti;
-      grp.petiCount = Math.max(1, Math.ceil(grp.totalBoxes / pcsPerPeti));
+      
+      const boxCases = Number(box.cases) || 0;
+      const isPetiLevel = boxCases > 0 && grp.totalBoxes <= boxCases;
+      grp.isPetiLevel = isPetiLevel;
+
+      if (isPetiLevel) {
+        grp.availableCases = grp.availableBoxes;
+        grp.fullCases = grp.availableBoxes;
+        grp.loosePieces = 0;
+        grp.petiCount = grp.availableBoxes;
+        grp.totalCases = grp.totalBoxes;
+        grp.availablePieces = grp.availableBoxes * pcsPerPeti;
+        grp.totalPieces = grp.totalBoxes * pcsPerPeti;
+      } else {
+        grp.petiCount = Math.max(1, Math.ceil(grp.totalBoxes / pcsPerPeti));
+      }
     });
     return Array.from(map.values());
   }, [isSearchMode, searchedBoxes]);
 
-  // Display groups: either search groups or the invoice summaries, filtered instantly by search input in real time
+  // Display groups: either search groups or the invoice summaries, filtered instantly by search input in real time (0ms from cache!)
   const displayGroups = useMemo(() => {
     if (search && search.trim()) {
-      const term = search.trim();
+      const term = search.trim().toLowerCase();
       if (isSearchMode && searchInvoiceGroups.length > 0) {
         return searchInvoiceGroups.filter(group => {
-          const combined = `${group.invoiceNo || ''} ${group.productName || ''} ${group.batchNumber || ''} ${group.packing || ''} ${group.warehouseLocation || ''} ${group.weight || ''} ${group.firstQr || ''} ${group.lastQr || ''}`;
+          const combined = `${group.invoiceNo || ''} ${group.productName || ''} ${(group.productNames || []).join(' ')} ${group.batchNumber || ''} ${(group.batches || []).join(' ')} ${group.packing || ''} ${(group.packings || []).join(' ')} ${group.warehouseLocation || ''} ${group.weight || ''} ${group.firstQr || ''} ${group.lastQr || ''}`.toLowerCase();
           return matchesSearch(combined, term);
         });
       }
       return invoices.filter(group => {
-        const combined = `${group.invoiceNo || ''} ${group.productName || ''} ${group.batchNumber || ''} ${group.packing || ''} ${group.warehouseLocation || ''} ${group.weight || ''} ${group.firstQr || ''} ${group.lastQr || ''}`;
+        const combined = `${group.invoiceNo || ''} ${group.productName || ''} ${(group.productNames || []).join(' ')} ${group.batchNumber || ''} ${(group.batches || []).join(' ')} ${group.packing || ''} ${(group.packings || []).join(' ')} ${group.warehouseLocation || ''} ${group.weight || ''} ${group.firstQr || ''} ${group.lastQr || ''}`.toLowerCase();
         return matchesSearch(combined, term);
       });
     }
@@ -508,42 +568,53 @@ export default function StockManagement() {
     return invoices;
   }, [isSearchMode, searchInvoiceGroups, invoices, search]);
 
+  const getGroupKey = useCallback((group) => {
+    return group.groupKey || group._id || `${group.invoiceNo}_${group.productName}_${group.packing || ''}_${group.batchNumber || ''}`;
+  }, []);
+
   // Toggle single accordion on click/tap - Loads boxes on demand!
-  const toggleInvoiceExpand = async (invoiceNo) => {
-    const nextState = !expandedInvoices[invoiceNo];
+  const toggleInvoiceExpand = async (group) => {
+    const key = getGroupKey(group);
+    const nextState = !expandedInvoices[key];
     setExpandedInvoices(prev => ({
       ...prev,
-      [invoiceNo]: nextState
+      [key]: nextState
     }));
 
-    // If expanding, fetch/load boxes for this invoice if not yet loaded
+    // If expanding, fetch/load boxes for this product line if not yet loaded
     if (nextState && !isSearchMode) {
-      if (invoiceBoxes[invoiceNo] && invoiceBoxes[invoiceNo].length > 0) {
+      if (invoiceBoxes[key] && invoiceBoxes[key].length > 0) {
         return;
       }
 
       // Check cache first
-      const cached = getCachedInvoiceBoxes(invoiceNo);
+      const cached = getCachedInvoiceBoxes(key);
       if (cached && cached.length > 0) {
-        setInvoiceBoxes(prev => ({ ...prev, [invoiceNo]: cached }));
+        setInvoiceBoxes(prev => ({ ...prev, [key]: cached }));
         return;
       }
 
       // Fetch on demand
-      setLoadingBoxes(prev => ({ ...prev, [invoiceNo]: true }));
+      setLoadingBoxes(prev => ({ ...prev, [key]: true }));
       try {
-        const res = await api.get('/stock', {
-          params: { purchaseInvoice: invoiceNo, limit: 2000 }
-        });
+        const params = {
+          purchaseInvoice: group.invoiceNo,
+          limit: 2000
+        };
+        if (group.productName) params.product = group.productName;
+        if (group.packing) params.packing = group.packing;
+        if (group.batchNumber) params.batch = group.batchNumber;
+
+        const res = await api.get('/stock', { params });
         if (res.data?.success) {
           const fetched = res.data.boxes || [];
-          setInvoiceBoxes(prev => ({ ...prev, [invoiceNo]: fetched }));
-          setCachedInvoiceBoxes(invoiceNo, fetched);
+          setInvoiceBoxes(prev => ({ ...prev, [key]: fetched }));
+          setCachedInvoiceBoxes(key, fetched);
         }
       } catch (err) {
-        console.error(`Failed to fetch boxes for invoice ${invoiceNo}:`, err);
+        console.error(`Failed to fetch boxes for invoice ${group.invoiceNo}:`, err);
       } finally {
-        setLoadingBoxes(prev => ({ ...prev, [invoiceNo]: false }));
+        setLoadingBoxes(prev => ({ ...prev, [key]: false }));
       }
     }
   };
@@ -551,24 +622,31 @@ export default function StockManagement() {
   const toggleExpandAll = async (expand) => {
     const newStates = {};
     displayGroups.forEach(g => {
-      newStates[g.invoiceNo] = expand;
+      const key = getGroupKey(g);
+      newStates[key] = expand;
     });
     setExpandedInvoices(newStates);
 
     // If expanding all and not in search mode, optionally fetch first few uncached
     if (expand && !isSearchMode) {
       for (const g of displayGroups.slice(0, 10)) {
-        if (!invoiceBoxes[g.invoiceNo]) {
-          const cached = getCachedInvoiceBoxes(g.invoiceNo);
+        const key = getGroupKey(g);
+        if (!invoiceBoxes[key]) {
+          const cached = getCachedInvoiceBoxes(key);
           if (cached) {
-            setInvoiceBoxes(prev => ({ ...prev, [g.invoiceNo]: cached }));
+            setInvoiceBoxes(prev => ({ ...prev, [key]: cached }));
           } else {
-            api.get('/stock', { params: { purchaseInvoice: g.invoiceNo, limit: 1000 } })
+            const params = { purchaseInvoice: g.invoiceNo, limit: 1000 };
+            if (g.productName) params.product = g.productName;
+            if (g.packing) params.packing = g.packing;
+            if (g.batchNumber) params.batch = g.batchNumber;
+
+            api.get('/stock', { params })
               .then(res => {
                 if (res.data?.success) {
                   const b = res.data.boxes || [];
-                  setInvoiceBoxes(prev => ({ ...prev, [g.invoiceNo]: b }));
-                  setCachedInvoiceBoxes(g.invoiceNo, b);
+                  setInvoiceBoxes(prev => ({ ...prev, [key]: b }));
+                  setCachedInvoiceBoxes(key, b);
                 }
               })
               .catch(() => {});
@@ -578,7 +656,7 @@ export default function StockManagement() {
     }
   };
 
-  const handleSaveRack = async (boxId, invoiceNo) => {
+  const handleSaveRack = async (boxId, groupKey) => {
     if (!isAdmin) {
       alert('Permission Denied! Editing stock rack locations is restricted to Admin.');
       return;
@@ -587,18 +665,18 @@ export default function StockManagement() {
       const res = await api.put(`/stock/${boxId}`, { warehouseLocation: editLocation });
       if (res.data?.success) {
         setEditingBox(null);
-        // Invalidate cache for this invoice
-        if (invoiceNo) {
+        // Invalidate cache for this group
+        if (groupKey) {
           try {
-            sessionStorage.removeItem(BOXES_CACHE_PREFIX + invoiceNo);
-            memBoxesCache.delete(invoiceNo);
+            sessionStorage.removeItem(BOXES_CACHE_PREFIX + groupKey);
+            memBoxesCache.delete(groupKey);
           } catch (e) {}
           // Update in state
           setInvoiceBoxes(prev => {
-            const list = prev[invoiceNo] || [];
+            const list = prev[groupKey] || [];
             return {
               ...prev,
-              [invoiceNo]: list.map(b => b._id === boxId ? { ...b, warehouseLocation: editLocation } : b)
+              [groupKey]: list.map(b => b._id === boxId ? { ...b, warehouseLocation: editLocation } : b)
             };
           });
         }
@@ -608,26 +686,26 @@ export default function StockManagement() {
     }
   };
 
-  const handleDeleteBox = async (boxId, qrId, invoiceNo) => {
+  const handleDeleteBox = async (boxId, qrId, groupKey, invoiceNo) => {
     if (!window.confirm(`Are you sure you want to delete stock box QR "${qrId}"?`)) return;
     try {
       const res = await api.delete(`/stock/${boxId}`);
       if (res.data?.success) {
-        if (invoiceNo) {
+        if (groupKey) {
           try {
-            sessionStorage.removeItem(BOXES_CACHE_PREFIX + invoiceNo);
+            sessionStorage.removeItem(BOXES_CACHE_PREFIX + groupKey);
             sessionStorage.removeItem(SUMMARY_CACHE_KEY);
-            memBoxesCache.delete(invoiceNo);
+            memBoxesCache.delete(groupKey);
             memSummaryCache = null;
           } catch (e) {}
           setInvoiceBoxes(prev => {
-            const list = prev[invoiceNo] || [];
+            const list = prev[groupKey] || [];
             return {
               ...prev,
-              [invoiceNo]: list.filter(b => b._id !== boxId)
+              [groupKey]: list.filter(b => b._id !== boxId)
             };
           });
-          setInvoices(prev => prev.map(inv => inv.invoiceNo === invoiceNo ? { ...inv, totalBoxes: Math.max(0, inv.totalBoxes - 1) } : inv));
+          setInvoices(prev => prev.map(inv => (inv.groupKey === groupKey || inv.invoiceNo === invoiceNo) ? { ...inv, totalBoxes: Math.max(0, inv.totalBoxes - 1) } : inv));
         }
       }
     } catch (err) {
@@ -873,20 +951,41 @@ export default function StockManagement() {
         ) : (
           <div className="space-y-3">
             {displayGroups.map((group) => {
-              // COLLAPSED BY DEFAULT: only open if explicit boolean true
-              const isExpanded = Boolean(expandedInvoices[group.invoiceNo]);
-              const groupBoxes = isSearchMode ? (group.boxes || []) : (invoiceBoxes[group.invoiceNo] || []);
-              const isLoadingCurrentBoxes = Boolean(loadingBoxes[group.invoiceNo]);
-              const caseInfo = parsePetiWeights(group.packing, group.conversion || group.pcsPerPeti || 20, group.cases || group.petiCount || 1, group.weight);
+              const groupKey = getGroupKey(group);
+              // COLLAPSED BY DEFAULT: only open if explicit boolean true for this specific product
+              const isExpanded = Boolean(expandedInvoices[groupKey]);
+              const groupBoxes = isSearchMode ? (group.boxes || []) : (invoiceBoxes[groupKey] || []);
+              const isLoadingCurrentBoxes = Boolean(loadingBoxes[groupKey]);
+              
+              const pcsPerPeti = group.conversion || group.pcsPerPeti || 10;
+              const isPetiLevel = Boolean(group.isPetiLevel || (group.cases && group.totalBoxes && group.totalBoxes <= group.cases));
+              
+              let availCases, fullPetis, loosePieces, availPieces, dispPieces;
+              if (isPetiLevel) {
+                availCases = group.availableCases !== undefined ? group.availableCases : (group.cases || group.totalBoxes || 1);
+                fullPetis = availCases;
+                loosePieces = 0;
+                availPieces = group.availablePieces !== undefined ? group.availablePieces : (availCases * pcsPerPeti);
+                dispPieces = group.dispatchedPieces !== undefined ? group.dispatchedPieces : ((group.dispatchedBoxes || 0) * pcsPerPeti);
+              } else {
+                availPieces = group.availablePieces !== undefined ? group.availablePieces : (group.availableBoxes !== undefined ? group.availableBoxes : (group.cases || 0) * pcsPerPeti);
+                dispPieces = group.dispatchedPieces !== undefined ? group.dispatchedPieces : (group.dispatchedBoxes || 0);
+                fullPetis = Math.floor(availPieces / pcsPerPeti);
+                loosePieces = availPieces % pcsPerPeti;
+                availCases = group.availableCases !== undefined ? group.availableCases : (loosePieces > 0 ? fullPetis + 1 : fullPetis);
+              }
+
+              const isOutOfStock = availCases <= 0 && availPieces <= 0;
+              const caseInfo = parsePetiWeights(group.packing, pcsPerPeti, availCases || 1, group.weight, availPieces);
 
               return (
                 <div
-                  key={group.invoiceNo}
+                  key={groupKey}
                   className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-xs transition-all hover:border-slate-300"
                 >
                   {/* Main Accordion Row Header */}
                   <div
-                    onClick={() => toggleInvoiceExpand(group.invoiceNo)}
+                    onClick={() => toggleInvoiceExpand(group)}
                     className="p-4 bg-slate-50/90 hover:bg-slate-100/90 cursor-pointer flex items-center justify-between gap-4 select-none transition-colors border-b border-slate-100"
                   >
                     {/* Left: Expand Arrow + Invoice Info */}
@@ -918,8 +1017,8 @@ export default function StockManagement() {
                           {group.packing && (
                             <span>| Packing: <strong className="text-[#0F6E56] font-bold">{group.packing}</strong></span>
                           )}
-                          <span>| Total Stock: <strong className="text-emerald-950 bg-emerald-100/90 border border-emerald-300 px-1.5 py-0.5 rounded font-black">{caseInfo.totalVolStr}</strong></span>
-                          <span>| Har Peti: <strong className="text-slate-800 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded font-extrabold">{caseInfo.caseWtStr} ({group.conversion || group.pcsPerPeti || 20} Pcs)</strong></span>
+                          <span>| Available Stock: <strong className="text-emerald-950 bg-emerald-100/90 border border-emerald-300 px-1.5 py-0.5 rounded font-black">{isOutOfStock ? '0' : caseInfo.totalVolStr}</strong></span>
+                          <span>| Har Peti: <strong className="text-slate-800 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded font-extrabold">{caseInfo.caseWtStr} ({pcsPerPeti} Pcs)</strong></span>
                           {group.warehouseLocation && (
                             <span>| Location: <strong className="text-slate-600">{group.warehouseLocation}</strong></span>
                           )}
@@ -945,23 +1044,51 @@ export default function StockManagement() {
                       )}
 
                       {/* 1-Line Unified Badge (Never wraps into 2 lines) */}
-                      <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs shadow-2xs whitespace-nowrap">
-                        <span className="font-extrabold text-slate-900">
-                          📦 {group.cases || group.petiCount || Math.max(1, Math.ceil(group.totalBoxes / 10))} Peti
-                        </span>
-                        <span className="text-slate-300">|</span>
-                        <span className="font-black bg-[#0F6E56] text-white px-2 py-0.5 rounded-md">
-                          {caseInfo.totalVolStr}
-                        </span>
-                        <span className="text-slate-300">|</span>
-                        <span className="font-extrabold text-slate-800">
-                          {group.totalBoxes} Pieces
-                        </span>
-                        <span className="text-slate-300">|</span>
-                        <span className="font-bold text-emerald-800 bg-emerald-100/80 px-2 py-0.5 rounded-md">
-                          1 Peti = {caseInfo.caseWtStr} ({group.conversion || group.pcsPerPeti || 20} Pcs)
-                        </span>
-                      </div>
+                      {isOutOfStock ? (
+                        <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-slate-100 border border-slate-300 text-xs shadow-2xs whitespace-nowrap">
+                          <span className="font-extrabold text-slate-600">
+                            🚚 0 Peti (Out of Stock / Dispatched)
+                          </span>
+                          {dispPieces > 0 && (
+                            <>
+                              <span className="text-slate-300">|</span>
+                              <span className="font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-md">
+                                {dispPieces} Pcs Dispatched
+                              </span>
+                            </>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs shadow-2xs whitespace-nowrap">
+                          <span className="font-extrabold text-slate-900">
+                            📦 {loosePieces > 0 ? (
+                              fullPetis > 0 ? `${fullPetis} Peti + ${loosePieces} Loose Pcs` : `${loosePieces} Loose Pcs`
+                            ) : (
+                              `${fullPetis} Peti`
+                            )} Available
+                          </span>
+                          <span className="text-slate-300">|</span>
+                          <span className="font-black bg-[#0F6E56] text-white px-2 py-0.5 rounded-md">
+                            {caseInfo.totalVolStr} Available
+                          </span>
+                          <span className="text-slate-300">|</span>
+                          <span className="font-extrabold text-slate-800">
+                            {availPieces} Pieces Available
+                          </span>
+                          {dispPieces > 0 && (
+                            <>
+                              <span className="text-slate-300">|</span>
+                              <span className="font-bold text-blue-800 bg-blue-100/90 px-2 py-0.5 rounded-md">
+                                🚚 {dispPieces} Pcs Dispatched
+                              </span>
+                            </>
+                          )}
+                          <span className="text-slate-300">|</span>
+                          <span className="font-bold text-emerald-800 bg-emerald-100/80 px-2 py-0.5 rounded-md">
+                            1 Peti = {caseInfo.caseWtStr} ({pcsPerPeti} Pcs)
+                          </span>
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -971,11 +1098,11 @@ export default function StockManagement() {
                       {isLoadingCurrentBoxes ? (
                         <div className="py-6 text-center text-xs text-slate-500 font-medium flex items-center justify-center gap-2">
                           <RefreshCw className="w-4 h-4 animate-spin text-[#0F6E56]" />
-                          <span>Loading stock boxes for Invoice #{group.invoiceNo}...</span>
+                          <span>Loading stock boxes for {group.productName} ({group.packing})...</span>
                         </div>
                       ) : groupBoxes.length === 0 ? (
                         <div className="py-6 text-center text-xs text-slate-400 font-medium">
-                          No stock boxes found for this invoice.
+                          No stock boxes found for this item.
                         </div>
                       ) : (() => {
                         const petis = groupBoxesIntoPetis(groupBoxes, group.cases || group.petiCount, group.packing || group.weight, group.conversion || group.pcsPerPeti || groupBoxes[0]?.conversion, group.weight);
@@ -983,13 +1110,13 @@ export default function StockManagement() {
                         return (
                           <div className="space-y-3">
                             <div className="px-2 py-1 text-[11px] font-extrabold uppercase tracking-wider text-slate-500 flex items-center justify-between">
-                              <span>PETI LIST FOR INVOICE #{group.invoiceNo} (TOTAL {petis.length} PETI = {caseInfo.totalVolStr} • {groupBoxes.length} PIECES • 1 PETI = {caseInfo.caseWtStr})</span>
+                              <span>PETI LIST FOR INVOICE #{group.invoiceNo} • {group.productName} ({group.packing}) (TOTAL {petis.length} PETI = {caseInfo.totalVolStr} • {petis.length * (group.conversion || group.pcsPerPeti || 10)} PIECES • 1 PETI = {caseInfo.caseWtStr})</span>
                               <div className="flex items-center gap-2">
                                 <button
                                   type="button"
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    toggleAllPetisInInvoice(group.invoiceNo, petis, true);
+                                    toggleAllPetisInInvoice(groupKey, petis, true);
                                   }}
                                   className="text-[10px] font-bold text-[#0F6E56] hover:underline cursor-pointer"
                                 >
@@ -1000,7 +1127,7 @@ export default function StockManagement() {
                                   type="button"
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    toggleAllPetisInInvoice(group.invoiceNo, petis, false);
+                                    toggleAllPetisInInvoice(groupKey, petis, false);
                                   }}
                                   className="text-[10px] font-bold text-slate-500 hover:underline cursor-pointer"
                                 >
@@ -1012,7 +1139,7 @@ export default function StockManagement() {
                             {/* List of Petis */}
                             <div className="space-y-2.5">
                               {petis.map((peti) => {
-                                const petiKey = `${group.invoiceNo}_p_${peti.petiNumber}`;
+                                const petiKey = `${groupKey}_p_${peti.petiNumber}`;
                                 const isPetiExpanded = Boolean(expandedPetis[petiKey]);
 
                                 return (
@@ -1024,7 +1151,7 @@ export default function StockManagement() {
                                     <div
                                       onClick={(e) => {
                                         e.stopPropagation();
-                                        togglePetiExpand(group.invoiceNo, peti.petiNumber);
+                                        togglePetiExpand(groupKey, peti.petiNumber);
                                       }}
                                       className="p-3 bg-slate-50/80 hover:bg-slate-100/80 cursor-pointer flex items-center justify-between gap-3 select-none transition-colors border-b border-slate-100"
                                     >
@@ -1057,9 +1184,19 @@ export default function StockManagement() {
                                       </div>
 
                                       <div className="flex items-center gap-3">
-                                        <span className="text-xs font-bold text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
-                                          {peti.availablePieces} / {peti.totalPieces} Available
-                                        </span>
+                                        {peti.availablePieces === 0 ? (
+                                          <span className="text-xs font-bold text-slate-600 bg-slate-100 px-2.5 py-1 rounded-full border border-slate-300">
+                                            0 / {peti.totalPieces} Available (Dispatched)
+                                          </span>
+                                        ) : peti.availablePieces < peti.totalPieces ? (
+                                          <span className="text-xs font-bold text-amber-800 bg-amber-50 px-2.5 py-1 rounded-full border border-amber-200">
+                                            {peti.availablePieces} / {peti.totalPieces} Available ({peti.totalPieces - peti.availablePieces} Dispatched)
+                                          </span>
+                                        ) : (
+                                          <span className="text-xs font-bold text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
+                                            {peti.availablePieces} / {peti.totalPieces} Available
+                                          </span>
+                                        )}
                                         <button
                                           type="button"
                                           className="text-xs font-bold text-[#0F6E56] hover:text-[#0B5442] flex items-center gap-1 bg-white border border-slate-200 px-2.5 py-1 rounded-lg cursor-pointer"
@@ -1113,7 +1250,7 @@ export default function StockManagement() {
                                                           className="w-24 bg-white border border-[#0F6E56] px-1.5 py-0.5 text-xs rounded"
                                                         />
                                                         <button
-                                                          onClick={() => handleSaveRack(box._id, group.invoiceNo)}
+                                                          onClick={() => handleSaveRack(box._id, groupKey)}
                                                           className="text-emerald-700 hover:text-emerald-900 font-bold p-0.5 cursor-pointer"
                                                         >
                                                           <CheckCircle2 className="w-4 h-4" />
@@ -1121,12 +1258,12 @@ export default function StockManagement() {
                                                       </div>
                                                     ) : (
                                                       <div className="flex items-center gap-1">
-                                                        <span>{box.warehouseLocation || 'RAIPUR GODOWN'}</span>
+                                                        <span>{box.warehouseLocation || 'FACTORY GODOWN'}</span>
                                                         {isAdmin && (
                                                           <button
                                                             onClick={() => {
                                                               setEditingBox(box._id);
-                                                              setEditLocation(box.warehouseLocation || 'RAIPUR GODOWN');
+                                                              setEditLocation(box.warehouseLocation || 'FACTORY GODOWN');
                                                             }}
                                                             className="text-slate-400 hover:text-[#0F6E56] p-0.5 cursor-pointer"
                                                             title="Edit Rack Location (Admin Only)"
@@ -1154,7 +1291,7 @@ export default function StockManagement() {
                                                       {isAdmin && (
                                                         <button
                                                           type="button"
-                                                          onClick={() => handleDeleteBox(box._id, box.qrId, group.invoiceNo)}
+                                                          onClick={() => handleDeleteBox(box._id, box.qrId, groupKey, group.invoiceNo)}
                                                           className="text-red-500 hover:text-red-700 hover:bg-red-50 p-1 rounded-lg transition-colors flex items-center gap-1 text-xs font-bold cursor-pointer"
                                                           title="Delete this stock box (Admin Only)"
                                                         >

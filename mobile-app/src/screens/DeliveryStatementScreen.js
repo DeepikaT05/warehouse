@@ -64,7 +64,7 @@ export default function DeliveryStatementScreen({ navigation }) {
       });
 
       if (res.data && res.data.success) {
-        Alert.alert('✅ Photo Uploaded!', 'Dispatched goods photo proof stored successfully.');
+        Alert.alert('Photo Uploaded!', 'Dispatched goods photo proof stored successfully.');
         fetchDispatches();
       } else {
         Alert.alert('Upload Error', res.data?.message || 'Could not save photo proof.');
@@ -118,13 +118,13 @@ export default function DeliveryStatementScreen({ navigation }) {
                       <Text style={styles.dateText}>{dateStr}</Text>
                     </View>
                     <Text style={styles.dealerText} numberOfLines={1}>
-                      👤 {dealerName} {item.dealerId?.city ? `(${item.dealerId.city})` : ''}
+                      {dealerName} {item.dealerId?.city ? `(${item.dealerId.city})` : ''}
                     </Text>
                   </View>
 
                   <View style={styles.boxCountBadge}>
                     <Text style={styles.boxCountText}>{boxCount} {boxCount === 1 ? 'Box' : 'Boxes'}</Text>
-                    <Text style={styles.expandChevron}>{isExpanded ? '▲' : '▼'}</Text>
+                    <Text style={styles.expandChevron}>{isExpanded ? '' : ''}</Text>
                   </View>
                 </TouchableOpacity>
 
@@ -132,17 +132,17 @@ export default function DeliveryStatementScreen({ navigation }) {
                   <View style={styles.expandedSection}>
                     {item.dealerId?.address ? (
                       <Text style={styles.detailText}>
-                        📍 {[item.dealerId?.address, item.dealerId?.city, item.dealerId?.state, item.dealerId?.pincode].filter(Boolean).join(', ')}
+                        {[item.dealerId?.address, item.dealerId?.city, item.dealerId?.state, item.dealerId?.pincode].filter(Boolean).join(', ')}
                       </Text>
                     ) : null}
                     {item.dealerId?.phone ? (
-                      <Text style={styles.detailText}>📞 Phone: {item.dealerId.phone}</Text>
+                      <Text style={styles.detailText}>Phone: {item.dealerId.phone}</Text>
                     ) : null}
                     {item.dealerId?.gstNumber ? (
                       <Text style={styles.detailText}>GSTIN: {item.dealerId.gstNumber}</Text>
                     ) : null}
                     <Text style={styles.detailText}>
-                      🚚 Transport: {item.courierName} ({item.vehicleNumber}) - Driver: {item.driverName}
+                      Transport: {item.courierName} ({item.vehicleNumber}) - Driver: {item.driverName}
                     </Text>
 
                     <Text style={[styles.detailText, { fontWeight: '800', marginTop: 6 }]}>Verified Box QRs:</Text>
@@ -161,14 +161,14 @@ export default function DeliveryStatementScreen({ navigation }) {
                       onPress={() => setViewPhotoUrl(item.dispatchPhotoUrl)}
                     >
                       <Image source={{ uri: item.dispatchPhotoUrl }} style={styles.thumbImage} />
-                      <Text style={styles.photoChipTextSuccess}>✓ Photo Proof</Text>
+                      <Text style={styles.photoChipTextSuccess}>Photo Proof</Text>
                     </TouchableOpacity>
                   ) : (
                     <TouchableOpacity 
                       style={styles.photoChipPending} 
                       onPress={() => handleCaptureGoodsPhoto(item)}
                     >
-                      <Text style={styles.photoChipTextPending}>📷 Add Photo</Text>
+                      <Text style={styles.photoChipTextPending}>Add Photo</Text>
                     </TouchableOpacity>
                   )}
 
@@ -176,14 +176,14 @@ export default function DeliveryStatementScreen({ navigation }) {
                     style={styles.pdfChip}
                     onPress={() => Linking.openURL(`https://warehouse.vanikicrop.com/api/dispatches/${item._id}/pdf`)}
                   >
-                    <Text style={styles.pdfChipText}>📄 PDF</Text>
+                    <Text style={styles.pdfChipText}>PDF</Text>
                   </TouchableOpacity>
 
                   <TouchableOpacity
                     style={styles.waChip}
                     onPress={() => handleWhatsApp(item)}
                   >
-                    <Text style={styles.waChipText}>💬 WhatsApp</Text>
+                    <Text style={styles.waChipText}>WhatsApp</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -210,7 +210,7 @@ export default function DeliveryStatementScreen({ navigation }) {
           setPhotoModalVisible(false);
           setActiveDispatchForPhoto(null);
         }}
-        title="📷 Dispatched Goods Photo Proof"
+        title="Dispatched Goods Photo Proof"
         onPhotoCaptured={handleSaveCapturedPhoto}
       />
 

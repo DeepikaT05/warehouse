@@ -160,7 +160,7 @@ export default function Dashboard() {
             onClick={() => navigate('/stock')}
             className="text-xs text-[#0F6E56] font-bold hover:underline"
           >
-            View All Stock Inventory →
+            View All Stock Inventory &gt;
           </button>
         </div>
 

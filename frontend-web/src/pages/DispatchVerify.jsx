@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { lazy, Suspense, useState, useEffect } from 'react';
 import api from '../utils/api';
-import QRScannerModal from '../components/QRScannerModal';
+// The camera library is only fetched when an operator actually opens the scanner.
+const QRScannerModal = lazy(() => import('../components/QRScannerModal'));
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { ShieldCheck, Camera, CheckCircle2, XCircle, AlertTriangle, Truck, Send, Trash2 } from 'lucide-react';
+import { ShieldCheck, Camera, CheckCircle2, XCircle, AlertTriangle, Truck, Send, Trash2, X } from 'lucide-react';
 
 export default function DispatchVerify() {
   const [searchParams] = useSearchParams();
@@ -137,7 +138,7 @@ export default function DispatchVerify() {
           playScanSound(true);
           setScanStatus({
             type: 'GREEN',
-            title: res.data.title || '✓ VERIFIED - READY FOR DISPATCH',
+            title: res.data.title || 'VERIFIED - READY FOR DISPATCH',
             reason: res.data.reason || `Box ${targetQr} matches Invoice #${selectedInvoiceNo}.`,
             box: res.data.box
           });
@@ -149,7 +150,7 @@ export default function DispatchVerify() {
         playScanSound(false);
         setScanStatus({
           type: 'RED',
-          title: res.data.title || '✖ MISMATCH DETECTED',
+          title: res.data.title || 'MISMATCH DETECTED',
           reason: res.data.reason || res.data.message || 'Box QR does not match active Sales Invoice!'
         });
         setScanQrInput('');
@@ -159,7 +160,7 @@ export default function DispatchVerify() {
       playScanSound(false);
       setScanStatus({
         type: 'RED',
-        title: '✖ VERIFICATION ERROR',
+        title: 'VERIFICATION ERROR',
         reason: err.response?.data?.message || err.message || 'Could not verify box QR with server.'
       });
       setScanQrInput('');
@@ -173,31 +174,31 @@ export default function DispatchVerify() {
 
     // 1. Validation: Checked boxes
     if (!verifiedBoxes || verifiedBoxes.length === 0) {
-      setDispatchError(`⚠️ Cannot Confirm Dispatch: No boxes have been verified for Invoice #${selectedInvoiceNo || 'N/A'}. Please scan or enter at least 1 Box QR code in the Box Verification Guard on the left.`);
+      setDispatchError(`Cannot Confirm Dispatch: No boxes have been verified for Invoice #${selectedInvoiceNo || 'N/A'}. Please scan or enter at least 1 Box QR code in the Box Verification Guard on the left.`);
       return;
     }
 
     // 2. Validation: Courier Name
     if (!deliveryData.courierName || !deliveryData.courierName.trim()) {
-      setDispatchError('⚠️ Courier Service Name is required. Please enter the transport / courier company name.');
+      setDispatchError('Courier Service Name is required. Please enter the transport / courier company name.');
       return;
     }
 
     // 3. Validation: Vehicle Number
     if (!deliveryData.vehicleNumber || !deliveryData.vehicleNumber.trim()) {
-      setDispatchError('⚠️ Vehicle Number is required (e.g. MH-12-AB-1234).');
+      setDispatchError('Vehicle Number is required (e.g. MH-12-AB-1234).');
       return;
     }
 
     // 4. Validation: Driver Name
     if (!deliveryData.driverName || !deliveryData.driverName.trim()) {
-      setDispatchError('⚠️ Driver Name is required.');
+      setDispatchError('Driver Name is required.');
       return;
     }
 
     // 5. Validation: Driver Mobile
     if (!deliveryData.driverMobile || !deliveryData.driverMobile.trim()) {
-      setDispatchError('⚠️ Driver Mobile number is required for dispatch handover.');
+      setDispatchError('Driver Mobile number is required for dispatch handover.');
       return;
     }
 
@@ -210,6 +211,15 @@ export default function DispatchVerify() {
       });
 
       if (res.data && res.data.success) {
+        // Invalidate frontend stock & QR print caches so latest stock levels reflect immediately
+        try {
+          Object.keys(sessionStorage).forEach(k => {
+            if (k.startsWith('vaniki_stock_') || k.startsWith('vaniki_qr_')) {
+              sessionStorage.removeItem(k);
+            }
+          });
+        } catch (e) {}
+
         setDispatchSuccess(res.data.message || 'Dispatch confirmed successfully!');
         const dId = res.data.dispatch?._id || '';
         setTimeout(() => {
@@ -226,7 +236,7 @@ export default function DispatchVerify() {
     } catch (err) {
       console.error('Dispatch confirmation error:', err);
       const errMsg = err.response?.data?.message || err.message || 'Server error occurred while confirming dispatch.';
-      setDispatchError(`✖ Dispatch Failed: ${errMsg}`);
+      setDispatchError(`Dispatch Failed: ${errMsg}`);
     } finally {
       setDispatching(false);
     }
@@ -259,11 +269,15 @@ export default function DispatchVerify() {
         </button>
       </div>
 
-      <QRScannerModal
-        isOpen={isScannerOpen}
-        onClose={() => setIsScannerOpen(false)}
-        onScanSuccess={(scannedText) => handleVerifyScan(scannedText)}
-      />
+      {isScannerOpen && (
+        <Suspense fallback={null}>
+          <QRScannerModal
+            isOpen={isScannerOpen}
+            onClose={() => setIsScannerOpen(false)}
+            onScanSuccess={(scannedText) => handleVerifyScan(scannedText)}
+          />
+        </Suspense>
+      )}
 
       {/* Invoice Selector Header */}
       <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
@@ -313,7 +327,6 @@ export default function DispatchVerify() {
         <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-3">
           <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
             <div className="flex items-center gap-2">
-              <span className="text-lg">📦</span>
               <h2 className="text-xs font-extrabold text-slate-800 uppercase tracking-wider">
                 Order Bill Products To Dispatch ({activeInvoice.items.length} Products)
               </h2>
@@ -326,14 +339,14 @@ export default function DispatchVerify() {
           {existingDispatch && (
             <div className="bg-emerald-50 border border-emerald-300 rounded-xl p-3.5 flex items-center justify-between text-xs text-emerald-900">
               <div className="flex items-center gap-2">
-                <span className="font-extrabold text-[#0F6E56]">✓ DISPATCH STATEMENT RECORDED:</span>
+                <span className="font-extrabold text-[#0F6E56]">DISPATCH STATEMENT RECORDED:</span>
                 <span>Statement #{existingDispatch.dispatchNo} ({existingDispatch.scannedBoxQrIds?.length || 0} boxes verified & dispatched)</span>
               </div>
               <button
                 onClick={() => navigate(`/delivery-statement?dispatchId=${existingDispatch._id}`)}
                 className="bg-[#0F6E56] text-white font-extrabold px-3.5 py-1.5 rounded-lg hover:bg-[#0c5946] transition-colors"
               >
-                View Delivery Statement ➔
+                View Delivery Statement
               </button>
             </div>
           )}
@@ -380,7 +393,7 @@ export default function DispatchVerify() {
                           : 'bg-slate-200 text-slate-700'
                       }`}
                     >
-                      {isComplete ? '✓ COMPLETED' : `${scannedForThisProduct} / ${item.quantity} BOXES`}
+                      {isComplete ? 'COMPLETED' : `${scannedForThisProduct} / ${item.quantity} BOXES`}
                     </span>
                   </div>
 
@@ -447,7 +460,7 @@ export default function DispatchVerify() {
               </div>
 
               <span className="text-xs font-black uppercase tracking-widest bg-white/20 px-3 py-1 rounded-full mb-2">
-                {scanStatus.type === 'GREEN' ? '✓ VERIFIED - MATCH CONFIRMED' : '✖ ALERT - MISMATCH DETECTED'}
+                {scanStatus.type === 'GREEN' ? 'VERIFIED - MATCH CONFIRMED' : 'ALERT - MISMATCH DETECTED'}
               </span>
               <h2 className="text-2xl sm:text-3xl font-black mb-2">{scanStatus.title}</h2>
               <p className="text-sm text-white/95 font-medium max-w-sm mb-6 leading-relaxed">
@@ -475,7 +488,7 @@ export default function DispatchVerify() {
                   className="flex-1 bg-white text-slate-900 font-extrabold text-sm py-3.5 px-4 rounded-xl shadow-lg hover:bg-slate-100 transition-transform active:scale-95 flex items-center justify-center gap-2"
                 >
                   <Camera className="w-4 h-4 text-[#0F6E56]" />
-                  <span>Scan Next Box ➔</span>
+                  <span>Scan Next Box</span>
                 </button>
                 <button
                   type="button"
@@ -515,7 +528,7 @@ export default function DispatchVerify() {
                   <th className="py-2.5 px-3">QR ID</th>
                   <th className="py-2.5 px-3">Product</th>
                   <th className="py-2.5 px-3">Batch</th>
-                  <th className="py-2.5 px-3">Weight</th>
+                  <th className="py-2.5 px-3">Packing / Wt</th>
                   <th className="py-2.5 px-3">Status</th>
                   <th className="py-2.5 px-3 text-right">Remove</th>
                 </tr>
@@ -526,7 +539,7 @@ export default function DispatchVerify() {
                     <td className="py-3 px-3 font-mono font-extrabold text-[#0F6E56]">{box.qrId}</td>
                     <td className="py-3 px-3 font-bold text-slate-900">{box.productName}</td>
                     <td className="py-3 px-3 text-slate-600">{box.batchNumber}</td>
-                    <td className="py-3 px-3 text-slate-600">{box.weight}</td>
+                    <td className="py-3 px-3 text-slate-600">{box.packing || box.weight || '1 kg'}</td>
                     <td className="py-3 px-3">
                       <span className="text-[10px] font-bold bg-emerald-100 text-[#0F6E56] px-2 py-0.5 rounded">
                         VERIFIED
@@ -579,7 +592,7 @@ export default function DispatchVerify() {
                 onClick={() => setDispatchError('')}
                 className="text-red-400 hover:text-red-700 font-bold text-sm px-1"
               >
-                ✕
+                <X className="w-4 h-4" />
               </button>
             </div>
           )}

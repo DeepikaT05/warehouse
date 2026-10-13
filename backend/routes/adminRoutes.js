@@ -23,10 +23,10 @@ const {
   updateAuditLog
 } = require('../controllers/adminController');
 const { verifyToken } = require('../middleware/auth');
-const { requireRoles } = require('../middleware/rbac');
+const { requireAdmin } = require('../middleware/rbac');
 
 // All admin routes require verifyToken and admin role
-router.use(verifyToken, requireRoles('admin'));
+router.use(verifyToken, requireAdmin);
 
 // User management
 router.get('/users', getUsers);

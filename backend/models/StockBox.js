@@ -9,23 +9,27 @@ const historyItemSchema = new mongoose.Schema({
 }, { _id: false });
 
 const stockBoxSchema = new mongoose.Schema({
-  qrId: { type: String, required: true, unique: true, index: true }, // VNK-00000001
+  qrId: { type: String, required: true, unique: true }, // VNK-00000001
   barcode: { type: String, required: true },
   purchaseId: { type: mongoose.Schema.Types.ObjectId, ref: 'Purchase' },
   productName: { type: String, required: true },
   technicalName: { type: String, default: '' },
   manufacturer: { type: String, required: true },
   batchNumber: { type: String, required: true },
-  weight: { type: String, default: '1 kg' },
+  weight: { type: String, default: null },
   hsnCode: { type: String, default: '' },
-  packing: { type: String, default: '1 kg' },
+  packing: { type: String, default: null },
   cases: { type: Number, default: 1 },
+  conversion: { type: Number, default: 0 },
   casePacking: { type: String, default: '' },
   purchaseInvoice: { type: String, required: true },
   purchaseCost: { type: Number, default: 0 },
+  totalCost: { type: Number, default: 0 },
+  costUnit: { type: String, default: 'box' },
+  costRate: { type: Number, default: 0 },
   category: { type: String, default: 'Crop Protection' },
   unit: { type: String, default: 'kg' },
-  packingSize: { type: String, default: '1 kg' },
+  packingSize: { type: String, default: null },
   mrp: { type: Number, default: 0 },
   mfgDate: { type: Date, default: Date.now },
   expDate: { type: Date, default: () => new Date(Date.now() + 365 * 24 * 60 * 60 * 1000) },
@@ -61,5 +65,15 @@ stockBoxSchema.pre('save', function(next) {
   this.updatedAt = Date.now();
   next();
 });
+
+// Query indexes (list/filter/dashboard hot paths)
+stockBoxSchema.index({ isDeleted: 1, status: 1, createdAt: -1 });
+stockBoxSchema.index({ isDeleted: 1, verificationStatus: 1 });
+stockBoxSchema.index({ barcode: 1 });
+stockBoxSchema.index({ purchaseId: 1 });
+stockBoxSchema.index({ purchaseInvoice: 1 });
+stockBoxSchema.index({ assignedInvoiceNo: 1 });
+stockBoxSchema.index({ productName: 1, batchNumber: 1 });
+stockBoxSchema.index({ updatedAt: -1 });
 
 module.exports = mongoose.model('StockBox', stockBoxSchema);

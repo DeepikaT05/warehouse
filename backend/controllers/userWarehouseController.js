@@ -1,21 +1,185 @@
+const mongoose = require('mongoose');
 const Purchase = require('../models/Purchase');
 const StockBox = require('../models/StockBox');
 const SalesInvoice = require('../models/SalesInvoice');
 const Dispatch = require('../models/Dispatch');
 const AuditLog = require('../models/AuditLog');
+const Product = require('../models/Product');
 const PDFDocument = require('pdfkit');
+const { syncB2BInvoices, cancelOrderLocally } = require('../services/b2bSyncService');
 
-// Helper to generate sequential QR ID (e.g. VNK-00000001)
-const generateNextQrId = async () => {
-  const lastBox = await StockBox.findOne({}, { qrId: 1 }).sort({ createdAt: -1 });
-  let nextNum = 1;
-  if (lastBox && lastBox.qrId) {
-    const match = lastBox.qrId.match(/VNK-(\d+)/i);
-    if (match) {
-      nextNum = parseInt(match[1], 10) + 1;
-    }
+function getPiecesPerPeti(packing) {
+  if (!packing) return 10;
+  const p = packing.toString().toUpperCase().trim();
+  if (p.includes('160 GM') || p.includes('160GM') || p.includes('CURVE')) return 8;
+  if (p.includes('1 LTR') || p.includes('1 LT') || p.includes('1 KG') || p.includes('1KG')) return 10;
+  if (p.includes('500 ML') || p.includes('500 GM') || p.includes('500GM') || p.includes('500ML')) return 20;
+  if (p.includes('250 ML') || p.includes('250 GM') || p.includes('250GM') || p.includes('250ML')) return 40;
+  if (p.includes('100 ML') || p.includes('100 GM') || p.includes('100GM') || p.includes('100ML')) return 50;
+  if (p.includes('150 ML') || p.includes('200 ML')) return 20;
+  if (p.includes('300 ML') || p.includes('300 GM') || p.includes('400 ML') || p.includes('800 ML')) return 20;
+  if (p.includes('4 KG') || p.includes('5 KG') || p.includes('4KG') || p.includes('5KG')) return 4;
+  if (p.includes('8 GM') || p.includes('15 ML') || p.includes('30 GM') || p.includes('50 GM') || p.includes('75 GM')) return 100;
+  return 10;
+}
+
+const normText = (s) => (s || '').toString().toLowerCase().trim().replace(/[^a-z0-9]/g, '');
+const escapeRegexStr = (str) => String(str).replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
+
+function extractPackingSize(text) {
+  if (!text) return null;
+  const s = String(text).toUpperCase().trim();
+  
+  // Look for liter patterns: e.g. "1 LTR", "1 L", "1LITER"
+  const ltrMatch = s.match(/(\d+(?:\.\d+)?)\s*(?:LTR|LITER|L\b)/i);
+  if (ltrMatch) {
+    const val = parseFloat(ltrMatch[1]);
+    return `${val * 1000}ML`;
   }
-  return nextNum;
+
+  // Look for ML patterns: e.g. "500ML", "250 ML"
+  const mlMatch = s.match(/(\d+(?:\.\d+)?)\s*ML/i);
+  if (mlMatch) {
+    return `${parseFloat(mlMatch[1])}ML`;
+  }
+
+  // Look for KG patterns: e.g. "1 KG", "5KG"
+  const kgMatch = s.match(/(\d+(?:\.\d+)?)\s*(?:KG|KGS)/i);
+  if (kgMatch) {
+    const val = parseFloat(kgMatch[1]);
+    return `${val * 1000}GM`;
+  }
+
+  // Look for GM patterns: e.g. "250GM", "266.4 GM"
+  const gmMatch = s.match(/(\d+(?:\.\d+)?)\s*(?:GM|GMS|G\b)/i);
+  if (gmMatch) {
+    return `${parseFloat(gmMatch[1])}GM`;
+  }
+
+  return null;
+}
+
+function extractBaseProductName(text) {
+  if (!text) return '';
+  return text
+    .replace(/\b\d+(\.\d+)?\s*(ltr|liter|ml|gm|gms|g|l|kg|kgs)\b/gi, '')
+    .replace(/\d+l\b/gi, '')
+    .replace(/\/\d+/g, '')
+    .replace(/\([^\)]*\)/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '')
+    .trim();
+}
+
+function matchProduct(name, code, weight, products) {
+  const lineName = normText(name);
+  const lineCode = normText(code);
+  const itemWeight = normText(weight);
+
+  if (lineCode) {
+    const byCode = products.find(p => normText(p.productCode) === lineCode);
+    if (byCode) return byCode;
+  }
+
+  // Exact match by name AND packing/weight
+  if (itemWeight) {
+    const byNameAndPack = products.find(p => {
+      const pName = normText(p.name);
+      const pPack = normText(p.packingSize);
+      const nameMatches = pName === lineName || pName.includes(lineName) || lineName.includes(pName);
+      const packMatches = pPack === itemWeight || pPack.includes(itemWeight) || itemWeight.includes(pPack) || pName.includes(itemWeight);
+      return nameMatches && packMatches;
+    });
+    if (byNameAndPack) return byNameAndPack;
+  }
+
+  // Exact match on name
+  const exactName = products.find(p => normText(p.name) === lineName);
+  if (exactName) return exactName;
+
+  // Partial match on name
+  return products.find(p => {
+    const pName = normText(p.name);
+    return lineName.includes(pName) || pName.includes(lineName);
+  });
+}
+
+async function enrichOrdersWithPetis(orders) {
+  if (!orders || !orders.length) return orders;
+  const products = await Product.find({ isDeleted: { $ne: true } })
+    .select('name productCode conversion packingSize')
+    .lean();
+
+  return orders.map(order => {
+    let orderTotalBoxes = 0;
+    let orderTotalPieces = 0;
+
+    const enrichedItems = (order.items || []).map(item => {
+      const lineName = normText(item.productName);
+      const matchedProd = matchProduct(item.productName, item.productCode, item.weight, products);
+
+      let pcsPerPeti = 10;
+      if (matchedProd && Number(matchedProd.conversion) > 0) {
+        pcsPerPeti = Number(matchedProd.conversion);
+      } else {
+        pcsPerPeti = getPiecesPerPeti(item.weight || (matchedProd && matchedProd.packingSize));
+      }
+
+      const qty = Number(item.quantity) || 0;
+      const totalBoxes = qty > 0 ? Math.ceil(qty / pcsPerPeti) : 0;
+      orderTotalBoxes += totalBoxes;
+      orderTotalPieces += qty;
+
+      const itemSize = extractPackingSize(item.productName) || extractPackingSize(item.weight);
+      const pickedBoxes = (order.pickedItems || []).filter(p => {
+        const pBase = extractBaseProductName(p.productName);
+        const lBase = extractBaseProductName(item.productName);
+        const nameMatch = pBase === lBase || (pBase && lBase && (pBase.includes(lBase) || lBase.includes(pBase)));
+        const pSize = extractPackingSize(p.packing) || extractPackingSize(p.productName) || extractPackingSize(p.weight);
+        const sizeMatch = !itemSize || !pSize || pSize === itemSize;
+        return nameMatch && sizeMatch;
+      }).length;
+
+      const itemObj = (item && typeof item.toObject === 'function') ? item.toObject() : item;
+      const sizeStr = item.weight && !item.productName.toUpperCase().includes(item.weight.toUpperCase())
+        ? ` (${item.weight})`
+        : '';
+
+      return {
+        ...itemObj,
+        pcsPerPeti,
+        totalBoxes,
+        pickedBoxes,
+        displayProductName: `${item.productName}${sizeStr}`,
+        packingSize: itemSize,
+        displayQty: `${totalBoxes} Boxes (${qty} Pcs)`
+      };
+    });
+
+    const isPlain = !order || typeof order.toObject !== 'function';
+    const baseOrder = isPlain ? order : order.toObject();
+
+    return {
+      ...baseOrder,
+      items: enrichedItems,
+      totalBoxes: orderTotalBoxes,
+      totalPieces: orderTotalPieces,
+      totalRequiredBoxes: orderTotalBoxes,
+      scannedBoxes: (order.pickedItems || []).length
+    };
+  });
+}
+
+// Next sequential QR number. Sorting by createdAt could hand back an already-used
+// number after a backdated insert, so pick the highest numeric suffix instead.
+const generateNextQrId = async () => {
+  const [top] = await StockBox.aggregate([
+    { $match: { qrId: /^VNK-\d+$/ } },
+    { $project: { num: { $toInt: { $substrBytes: ['$qrId', 4, 12] } } } },
+    { $sort: { num: -1 } },
+    { $limit: 1 }
+  ]);
+  return (top?.num || 0) + 1;
 };
 
 // -------------------------------------------------------------
@@ -23,7 +187,7 @@ const generateNextQrId = async () => {
 // -------------------------------------------------------------
 const getPurchases = async (req, res) => {
   try {
-    const purchases = await Purchase.find({ isDeleted: false }).sort({ createdAt: -1 });
+    const purchases = await Purchase.find({ isDeleted: { $ne: true } }).sort({ createdAt: -1 }).lean();
     return res.json({ success: true, purchases });
   } catch (err) {
     return res.status(500).json({ success: false, message: err.message });
@@ -76,11 +240,14 @@ const createPurchase = async (req, res) => {
       productName,
       category: category || 'Crop Protection',
       batchNumber,
-      packingSize: packingSize || '1 kg',
+      packingSize: packingSize || null,
       unit: unit || 'kg',
       quantity: qty,
-      weight: weight || packingSize || '1 kg',
+      weight: weight || packingSize || null,
       purchaseCost: Number(purchaseCost) || 0,
+      totalCost: Number(req.body.totalPrice) || (Number(purchaseCost) * qty) || 0,
+      costUnit: req.body.costUnit || 'box',
+      costRate: Number(req.body.costRate) || Number(purchaseCost) || 0,
       mrp: Number(mrp) || 0,
       mfgDate: mfgDate || Date.now(),
       expDate: expDate || new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
@@ -88,7 +255,7 @@ const createPurchase = async (req, res) => {
       remarks: remarks || '',
       status,
       isLocked: !isDraft,
-      createdBy: req.user?.id,
+      createdBy: (req.user?.id && mongoose.Types.ObjectId.isValid(req.user.id)) ? req.user.id : undefined,
       enteredByUsername: req.user?.username || 'warehouse1'
     });
 
@@ -116,7 +283,7 @@ const getPurchaseById = async (req, res) => {
     if (!purchase || purchase.isDeleted) {
       return res.status(404).json({ success: false, message: 'Purchase record not found.' });
     }
-    const boxes = await StockBox.find({ purchaseId: purchase._id, isDeleted: false });
+    const boxes = await StockBox.find({ purchaseId: purchase._id, isDeleted: { $ne: true } }).select('-history').lean();
     return res.json({ success: true, purchase, boxes });
   } catch (err) {
     return res.status(500).json({ success: false, message: err.message });
@@ -164,23 +331,24 @@ const generatePurchaseQrCodes = async (req, res) => {
       });
     }
 
-    let currentSeq = await generateNextQrId();
-    const createdBoxes = [];
+    const currentSeq = await generateNextQrId();
+    const now = new Date();
+    const actor = req.user?.username || 'Warehouse Worker';
 
-    for (let i = 0; i < purchase.quantity; i++) {
-      const formattedSeq = String(currentSeq + i);
-      const qrId = `VNK-${formattedSeq}`;
-      const barcode = `VNK-${formattedSeq}`;
-
-      const box = new StockBox({
+    const docs = Array.from({ length: purchase.quantity }, (_, i) => {
+      const qrId = `VNK-${currentSeq + i}`;
+      return {
         qrId,
-        barcode,
+        barcode: qrId,
         purchaseId: purchase._id,
         productName: purchase.productName,
+        technicalName: purchase.technicalName || '',
         manufacturer: purchase.manufacturer,
         batchNumber: purchase.batchNumber,
+        hsnCode: purchase.hsnCode || '',
         category: purchase.category,
         unit: purchase.unit,
+        packing: purchase.packing || purchase.packingSize,
         packingSize: purchase.packingSize,
         weight: purchase.weight || purchase.packingSize,
         purchaseInvoice: purchase.invoiceNumber,
@@ -197,22 +365,22 @@ const generatePurchaseQrCodes = async (req, res) => {
             stage: 'Purchase Received',
             title: 'Purchase Bill Logged',
             description: `Received via Purchase Invoice #${purchase.invoiceNumber} from ${purchase.manufacturer}`,
-            performedBy: req.user?.username || 'Warehouse Worker',
-            timestamp: new Date()
+            performedBy: actor,
+            timestamp: now
           },
           {
             stage: 'QR Generated',
             title: 'Unique Barcode/QR Assigned',
             description: `Unique identity ${qrId} generated for box`,
-            performedBy: req.user?.username || 'Warehouse Worker',
-            timestamp: new Date()
+            performedBy: actor,
+            timestamp: now
           }
         ]
-      });
+      };
+    });
 
-      await box.save();
-      createdBoxes.push(box);
-    }
+    // Single round trip instead of one save() per box.
+    const createdBoxes = await StockBox.insertMany(docs, { ordered: true });
 
     purchase.status = 'barcode_generated';
     await purchase.save();
@@ -276,31 +444,50 @@ const recordStickerPrint = async (req, res) => {
 const getStockBoxes = async (req, res) => {
   try {
     const { search, product, batch, status } = req.query;
-    const filter = { isDeleted: false };
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(500, Math.max(1, parseInt(req.query.limit, 10) || 200));
 
-    if (product) filter.productName = { $regex: product, $options: 'i' };
-    if (batch) filter.batchNumber = { $regex: batch, $options: 'i' };
+    const esc = (t) => String(t).replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
+    const filter = { isDeleted: { $ne: true } };
+
+    if (product) filter.productName = { $regex: esc(product), $options: 'i' };
+    if (batch) filter.batchNumber = { $regex: esc(batch), $options: 'i' };
     if (status) filter.status = status;
-    if (search) {
+    if (search && search.trim()) {
+      const q = esc(search.trim());
       filter.$or = [
-        { qrId: { $regex: search, $options: 'i' } },
-        { barcode: { $regex: search, $options: 'i' } },
-        { productName: { $regex: search, $options: 'i' } },
-        { batchNumber: { $regex: search, $options: 'i' } },
-        { purchaseInvoice: { $regex: search, $options: 'i' } }
+        { qrId: { $regex: q, $options: 'i' } },
+        { barcode: { $regex: q, $options: 'i' } },
+        { productName: { $regex: q, $options: 'i' } },
+        { batchNumber: { $regex: q, $options: 'i' } },
+        { purchaseInvoice: { $regex: q, $options: 'i' } }
       ];
     }
 
-    const boxes = await StockBox.find(filter).sort({ createdAt: -1 });
+    const [boxes, matched, byStatus, pendingVerification] = await Promise.all([
+      StockBox.find(filter).select('-history').sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit).lean(),
+      StockBox.countDocuments(filter),
+      StockBox.aggregate([
+        { $match: { isDeleted: { $ne: true } } },
+        { $group: { _id: '$status', count: { $sum: 1 } } }
+      ]),
+      StockBox.countDocuments({ isDeleted: { $ne: true }, verificationStatus: 'pending_verification' })
+    ]);
 
+    const counts = Object.fromEntries(byStatus.map(r => [r._id, r.count]));
     const summary = {
-      total: await StockBox.countDocuments({ isDeleted: false }),
-      pendingVerification: await StockBox.countDocuments({ isDeleted: false, verificationStatus: 'pending_verification' }),
-      available: await StockBox.countDocuments({ isDeleted: false, status: 'available' }),
-      dispatched: await StockBox.countDocuments({ isDeleted: false, status: 'dispatched' })
+      total: byStatus.reduce((acc, r) => acc + r.count, 0),
+      pendingVerification,
+      available: counts.available || 0,
+      dispatched: counts.dispatched || 0
     };
 
-    return res.json({ success: true, boxes, summary });
+    return res.json({
+      success: true,
+      boxes,
+      summary,
+      pagination: { page, limit, matched, pages: Math.max(1, Math.ceil(matched / limit)) }
+    });
   } catch (err) {
     return res.status(500).json({ success: false, message: err.message });
   }
@@ -375,14 +562,124 @@ const verifyInitialStockScan = async (req, res) => {
 // -------------------------------------------------------------
 // 4. ASSIGNED DEALER ORDERS / BILLS MODULE
 // -------------------------------------------------------------
+let lastSyncTimestamp = 0;
+
 const getAssignedOrders = async (req, res) => {
   try {
-    const { status } = req.query;
-    const filter = {};
-    if (status) filter.orderStatus = status;
+    const { status, search, includeDispatched } = req.query;
 
-    const orders = await SalesInvoice.find(filter).sort({ createdAt: -1 }).populate('dealerId');
-    return res.json({ success: true, orders });
+    // Auto-sync in background if last sync was > 60 seconds ago
+    const now = Date.now();
+    if (now - lastSyncTimestamp > 60000) {
+      lastSyncTimestamp = now;
+      syncB2BInvoices().catch(err => console.warn('[AutoSync] Background sync failed:', err.message));
+    }
+
+    const conditions = [];
+
+    if (status) {
+      if (status === 'rejected') {
+        conditions.push({ $or: [{ orderStatus: 'rejected' }, { isRejected: true }] });
+      } else if (status === 'cancelled') {
+        conditions.push({ $or: [{ orderStatus: 'cancelled' }, { isCancelled: true }] });
+      } else if (status === 'rejected_or_cancelled') {
+        conditions.push({
+          $or: [
+            { orderStatus: { $in: ['rejected', 'cancelled'] } },
+            { isRejected: true },
+            { isCancelled: true }
+          ]
+        });
+      } else if (status === 'completed' || status === 'dispatched' || status === 'history') {
+        conditions.push({
+          $or: [
+            { orderStatus: { $in: ['completed', 'sent_to_dealer', 'dealer_approved'] } },
+            { status: { $in: ['dispatched', 'completed'] } }
+          ]
+        });
+      } else if (status === 'dealer_tracking' || status === 'sent_to_dealer') {
+        conditions.push({
+          $or: [
+            { orderStatus: { $in: ['sent_to_dealer', 'dealer_approved', 'completed'] } },
+            { status: 'dispatched' }
+          ]
+        });
+      } else if (status === 'all' || status === 'any') {
+        // No status filter
+      } else if (status === 'new') {
+        conditions.push({
+          orderStatus: { $in: ['new', 'viewed'] },
+          status: { $nin: ['dispatched', 'completed'] },
+          isRejected: { $ne: true },
+          isCancelled: { $ne: true }
+        });
+      } else {
+        conditions.push({
+          orderStatus: status,
+          status: { $nin: ['dispatched', 'completed'] },
+          isRejected: { $ne: true },
+          isCancelled: { $ne: true }
+        });
+      }
+    } else if (!search && includeDispatched !== 'true') {
+      // Default view for Dashboard & Active Queue:
+      // Exclude dispatched, completed, cancelled, and rejected orders
+      conditions.push({
+        status: { $nin: ['dispatched', 'completed'] },
+        orderStatus: { $nin: ['completed', 'sent_to_dealer', 'dealer_approved', 'rejected', 'cancelled'] },
+        isRejected: { $ne: true },
+        isCancelled: { $ne: true }
+      });
+    }
+
+    if (search) {
+      const regex = new RegExp(search.trim(), 'i');
+      conditions.push({
+        $or: [
+          { invoiceNo: regex },
+          { dealerName: regex },
+          { garageName: regex },
+          { buyerOrderNo: regex },
+          { centralInvoiceId: regex }
+        ]
+      });
+    }
+
+    const filter = conditions.length === 0
+      ? {}
+      : conditions.length === 1
+        ? conditions[0]
+        : { $and: conditions };
+
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 10));
+    const skip = (page - 1) * limit;
+
+    const [totalCount, orders] = await Promise.all([
+      SalesInvoice.countDocuments(filter),
+      SalesInvoice.find(filter)
+        .sort({ invoiceDate: -1, createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .populate('dealerId')
+        .lean()
+    ]);
+
+    const totalPages = Math.max(1, Math.ceil(totalCount / limit));
+    const enrichedOrders = await enrichOrdersWithPetis(orders);
+    return res.json({
+      success: true,
+      orders: enrichedOrders,
+      pagination: {
+        total: totalCount,
+        totalPages,
+        page,
+        limit,
+        hasPrevPage: page > 1,
+        hasNextPage: page < totalPages
+      },
+      lastSync: new Date(lastSyncTimestamp)
+    });
   } catch (err) {
     return res.status(500).json({ success: false, message: err.message });
   }
@@ -393,12 +690,13 @@ const getOrderById = async (req, res) => {
     const order = await SalesInvoice.findById(req.params.id).populate('dealerId');
     if (!order) return res.status(404).json({ success: false, message: 'Order / bill not found.' });
 
-    if (order.orderStatus === 'new') {
+    if (order.orderStatus === 'new' && !order.isRejected && !order.isCancelled) {
       order.orderStatus = 'viewed';
       await order.save();
     }
 
-    return res.json({ success: true, order });
+    const [enriched] = await enrichOrdersWithPetis([order]);
+    return res.json({ success: true, order: enriched });
   } catch (err) {
     return res.status(500).json({ success: false, message: err.message });
   }
@@ -411,6 +709,14 @@ const startStockPicking = async (req, res) => {
   try {
     const order = await SalesInvoice.findById(req.params.id);
     if (!order) return res.status(404).json({ success: false, message: 'Order not found.' });
+
+    if (order.orderStatus === 'rejected' || order.orderStatus === 'cancelled' || order.isRejected || order.isCancelled) {
+      return res.status(400).json({
+        success: false,
+        code: 'ORDER_CANCELLED_OR_REJECTED',
+        message: `Cannot start picking. Order #${order.invoiceNo} has been ${order.orderStatus.toUpperCase()}! Reason: ${order.cancellationReason || order.rejectionReason || 'Order cancelled'}`
+      });
+    }
 
     order.orderStatus = 'picking_started';
     await order.save();
@@ -440,6 +746,15 @@ const scanPickingItem = async (req, res) => {
 
     const order = await SalesInvoice.findById(id);
     if (!order) return res.status(404).json({ success: false, message: 'Order not found.' });
+
+    if (order.orderStatus === 'rejected' || order.orderStatus === 'cancelled' || order.isRejected || order.isCancelled) {
+      return res.status(400).json({
+        success: false,
+        valid: false,
+        code: 'ORDER_CANCELLED_OR_REJECTED',
+        message: `Cannot pick items. Order #${order.invoiceNo} has been ${order.orderStatus.toUpperCase()}! Reason: ${order.cancellationReason || order.rejectionReason || 'Order cancelled'}`
+      });
+    }
 
     const cleanCode = barcode.trim().toUpperCase();
 
@@ -497,17 +812,23 @@ const scanPickingItem = async (req, res) => {
       });
     }
 
-    // Flexible Product Name & Product ID matching against order bill items
-    const matchingLine = order.items.find(line => {
-      const lineName = (line.productName || '').toLowerCase().trim();
-      const boxName = (box.productName || '').toLowerCase().trim();
-      const pNameMatch = lineName === boxName || (lineName && boxName && (lineName.includes(boxName) || boxName.includes(lineName)));
-      const pCodeMatch = line.productCode && box.productCode && line.productCode.toLowerCase().trim() === box.productCode.toLowerCase().trim();
+    // Validate Product, Packing Size, and Batch matching against order bill items
+    const boxBase = extractBaseProductName(box.productName);
+    const boxSize = extractPackingSize(box.packing) || extractPackingSize(box.productName) || extractPackingSize(box.weight);
 
-      return pNameMatch || pCodeMatch;
+    // 1. Find candidate lines by base product name
+    const candidateLines = order.items.filter(line => {
+      const lineBase = extractBaseProductName(line.productName);
+      const lineName = normText(line.productName);
+      const boxName = normText(box.productName);
+
+      const pBaseMatch = boxBase && lineBase && (boxBase === lineBase || boxBase.includes(lineBase) || lineBase.includes(boxBase));
+      const pNameMatch = lineName === boxName || (lineName && boxName && (lineName.includes(boxName) || boxName.includes(lineName)));
+      const pCodeMatch = line.productCode && box.productCode && normText(line.productCode) === normText(box.productCode);
+      return pBaseMatch || pNameMatch || pCodeMatch;
     });
 
-    if (!matchingLine) {
+    if (candidateLines.length === 0) {
       order.failedScanLogs.push({
         barcode: cleanCode,
         errorReason: `Product (${box.productName}) not present in order bill.`
@@ -523,25 +844,95 @@ const scanPickingItem = async (req, res) => {
       });
     }
 
-    // Count currently picked for this line
-    const currentLinePickedCount = order.pickedItems.filter(p =>
-      p.productName.toLowerCase().trim() === matchingLine.productName.toLowerCase().trim()
-    ).length;
+    // 2. Filter candidate lines by packing size
+    let sizeMatchedLines = candidateLines;
+    if (boxSize) {
+      const sizeFiltered = candidateLines.filter(line => {
+        const lineSize = extractPackingSize(line.productName) || extractPackingSize(line.weight);
+        if (!lineSize) return true;
+        return lineSize === boxSize;
+      });
 
-    if (currentLinePickedCount >= matchingLine.quantity) {
+      if (sizeFiltered.length === 0) {
+        const expectedSizes = candidateLines
+          .map(l => l.weight || extractPackingSize(l.productName) || 'N/A')
+          .filter((v, idx, arr) => arr.indexOf(v) === idx)
+          .join(', ');
+        order.failedScanLogs.push({
+          barcode: cleanCode,
+          errorReason: `Packing size mismatch. Box is ${box.packing || boxSize}, required: ${expectedSizes}`
+        });
+        await order.save();
+        return res.json({
+          success: false,
+          valid: false,
+          code: 'PACKING_SIZE_MISMATCH',
+          title: 'Wrong Packing Size',
+          message: `Scanned box is ${box.packing || box.weight || boxSize} ("${box.productName}"), but Order #${order.invoiceNo} requires ${expectedSizes}!`,
+          box
+        });
+      }
+      sizeMatchedLines = sizeFiltered;
+    }
+
+    // 3. Batch matching (if specified)
+    let matchingLine = sizeMatchedLines.find(line => {
+      if (!line.batchNumber || !line.batchNumber.trim() || line.batchNumber.trim().toUpperCase() === 'ANY') {
+        return true;
+      }
+      return normText(line.batchNumber) === normText(box.batchNumber);
+    });
+
+    if (!matchingLine) {
+      matchingLine = sizeMatchedLines[0];
+    }
+
+    // Determine pcsPerPeti for this item (Peti chunk size)
+    let pcsPerPeti = 10;
+    if (box.conversion && Number(box.conversion) > 0) {
+      pcsPerPeti = Number(box.conversion);
+    } else {
+      const prod = await Product.findOne({
+        $or: [
+          { name: new RegExp(`^${escapeRegexStr(matchingLine.productName)}$`, 'i') },
+          { productCode: matchingLine.productCode || box.productCode }
+        ],
+        isDeleted: { $ne: true }
+      }).select('conversion packingSize').lean();
+      if (prod && Number(prod.conversion) > 0) {
+        pcsPerPeti = Number(prod.conversion);
+      } else {
+        pcsPerPeti = getPiecesPerPeti(matchingLine.weight || box.packing || box.weight || (prod && prod.packingSize));
+      }
+    }
+
+    const requiredBoxesForLine = Math.max(1, Math.ceil((matchingLine.quantity || 0) / pcsPerPeti));
+
+    // Count currently picked Peti boxes for this specific line (matching base product AND size)
+    const matchingLineSize = extractPackingSize(matchingLine.productName) || extractPackingSize(matchingLine.weight);
+    const currentLinePickedCount = order.pickedItems.filter(p => {
+      const pBase = extractBaseProductName(p.productName);
+      const lBase = extractBaseProductName(matchingLine.productName);
+      const nameMatch = pBase === lBase || pBase.includes(lBase) || lBase.includes(pBase);
+      const pSize = extractPackingSize(p.packing) || extractPackingSize(p.productName) || extractPackingSize(p.weight);
+      const sizeMatch = !matchingLineSize || !pSize || pSize === matchingLineSize;
+      return nameMatch && sizeMatch;
+    }).length;
+
+    if (currentLinePickedCount >= requiredBoxesForLine) {
       return res.json({
         success: false,
         valid: false,
         code: 'QUANTITY_EXCEEDED',
-        title: 'Quantity Completed',
-        message: `Required quantity (${matchingLine.quantity}) for ${matchingLine.productName} is already fully picked!`
+        title: 'Boxes (Peti) Completed',
+        message: `Required ${requiredBoxesForLine} Peti / Boxes (${matchingLine.quantity} Pcs) for ${matchingLine.productName} is already fully picked!`
       });
     }
 
-    // Add box to picked list
+    // Add Peti box to picked list
     order.pickedItems.push({
       qrId: box.qrId,
-      barcode: box.barcode,
+      barcode: box.barcode || box.qrId,
       productName: box.productName,
       batchNumber: box.batchNumber,
       weight: box.weight,
@@ -551,9 +942,23 @@ const scanPickingItem = async (req, res) => {
 
     order.scannedCount = order.pickedItems.length;
 
-    // Check total picked vs required
-    const totalRequiredCount = order.items.reduce((acc, item) => acc + item.quantity, 0);
-    if (order.pickedItems.length >= totalRequiredCount) {
+    // Calculate total required Peti boxes for the whole order
+    const products = await Product.find({ isDeleted: { $ne: true } }).select('name productCode conversion packingSize').lean();
+    let totalRequiredBoxes = 0;
+    for (const itm of order.items) {
+      const itmLineName = normText(itm.productName);
+      const itmLineCode = normText(itm.productCode);
+      const mProd = products.find(p => {
+        const pCode = normText(p.productCode);
+        const pName = normText(p.name);
+        return (itmLineCode && pCode && itmLineCode === pCode) ||
+               (itmLineName && pName && (itmLineName === pName || itmLineName.includes(pName) || pName.includes(itmLineName)));
+      });
+      let itmPcs = (mProd && Number(mProd.conversion) > 0) ? Number(mProd.conversion) : getPiecesPerPeti(itm.weight || (mProd && mProd.packingSize));
+      totalRequiredBoxes += Math.max(1, Math.ceil((itm.quantity || 0) / itmPcs));
+    }
+
+    if (order.pickedItems.length >= totalRequiredBoxes) {
       order.orderStatus = 'picking_completed';
     }
 
@@ -562,11 +967,13 @@ const scanPickingItem = async (req, res) => {
     return res.json({
       success: true,
       valid: true,
-      title: 'Item Picked Successfully',
-      message: `Box ${box.qrId} added to picked list. (${order.pickedItems.length}/${totalRequiredCount} picked)`,
+      title: 'Peti / Box Picked Successfully',
+      message: `Peti ${box.qrId} added to picked list. (${order.pickedItems.length}/${totalRequiredBoxes} boxes picked)`,
       box,
       totalPicked: order.pickedItems.length,
-      totalRequired: totalRequiredCount
+      totalRequired: totalRequiredBoxes,
+      linePicked: currentLinePickedCount + 1,
+      lineRequired: requiredBoxesForLine
     });
   } catch (err) {
     return res.status(500).json({ success: false, message: err.message });
@@ -603,18 +1010,19 @@ const getVerificationSummary = async (req, res) => {
     const order = await SalesInvoice.findById(req.params.id);
     if (!order) return res.status(404).json({ success: false, message: 'Order not found.' });
 
-    const totalRequired = order.items.reduce((acc, item) => acc + item.quantity, 0);
+    const [enriched] = await enrichOrdersWithPetis([order]);
+    const totalRequired = enriched.totalBoxes;
     const totalPicked = order.pickedItems.length;
     const isComplete = totalPicked >= totalRequired;
 
     return res.json({
       success: true,
-      order,
+      order: enriched,
       summary: {
         totalRequired,
         totalPicked,
         isComplete,
-        itemsRequired: order.items,
+        itemsRequired: enriched.items,
         itemsPicked: order.pickedItems,
         failedScanLogs: order.failedScanLogs
       }
@@ -660,6 +1068,12 @@ const markOrderSentToDealer = async (req, res) => {
 
     const order = await SalesInvoice.findById(id).populate('dealerId');
     if (!order) return res.status(404).json({ success: false, message: 'Order not found.' });
+    if (!order.dealerId) {
+      return res.status(400).json({ success: false, message: 'This order has no dealer linked. Fix the dealer record before dispatching.' });
+    }
+    if (!order.pickedItems.length) {
+      return res.status(400).json({ success: false, message: 'No boxes have been picked for this order yet.' });
+    }
 
     order.transportName = transportName || 'Direct Transport';
     order.vehicleNumber = vehicleNumber || 'N/A';
@@ -667,7 +1081,7 @@ const markOrderSentToDealer = async (req, res) => {
     order.driverPhone = driverPhone || 'N/A';
     order.lrNumber = lrNumber || 'N/A';
     order.dispatchedAt = new Date();
-    order.orderStatus = 'sent_to_dealer';
+    order.orderStatus = 'completed';
     order.status = 'dispatched';
     await order.save();
 
@@ -679,7 +1093,7 @@ const markOrderSentToDealer = async (req, res) => {
       dispatchNo,
       salesInvoiceNo: order.invoiceNo,
       dealerId: order.dealerId._id,
-      scannedBoxQrIds,
+      scannedBoxQrIds: scannedQrIds,
       courierName: transportName || 'Direct Transport',
       vehicleNumber: vehicleNumber || 'N/A',
       driverName: driverName || 'N/A',
@@ -690,21 +1104,27 @@ const markOrderSentToDealer = async (req, res) => {
       status: 'dispatched'
     });
 
-    for (const qrId of scannedQrIds) {
-      const box = await StockBox.findOne({ qrId });
-      if (box) {
-        box.status = 'dispatched';
-        box.assignedInvoiceNo = order.invoiceNo;
-        box.assignedDealerId = order.dealerId._id;
-        box.history.push({
-          stage: 'Dispatched',
-          title: `Dispatched to Dealer ${order.dealerName}`,
-          description: `Transport: ${transportName}, Vehicle: ${vehicleNumber}`,
-          performedBy: req.user?.username || 'Warehouse Worker',
-          timestamp: new Date()
-        });
-        await box.save();
-      }
+    if (scannedQrIds.length) {
+      const historyEntry = {
+        stage: 'Dispatched',
+        title: `Dispatched to Dealer ${order.dealerName}`,
+        description: `Transport: ${order.transportName}, Vehicle: ${order.vehicleNumber}`,
+        performedBy: req.user?.username || 'Warehouse Worker',
+        timestamp: new Date()
+      };
+
+      await StockBox.updateMany(
+        { qrId: { $in: scannedQrIds } },
+        {
+          $set: {
+            status: 'dispatched',
+            assignedInvoiceNo: order.invoiceNo,
+            assignedDealerId: order.dealerId._id,
+            updatedAt: new Date()
+          },
+          $push: { history: historyEntry }
+        }
+      );
     }
 
     await AuditLog.create({
@@ -763,13 +1183,44 @@ const getUserDashboardSummary = async (req, res) => {
     const startOfDay = new Date();
     startOfDay.setHours(0, 0, 0, 0);
 
-    const todayPurchases = await Purchase.countDocuments({ isDeleted: false, createdAt: { $gte: startOfDay } });
-    const pendingBarcodeCount = await Purchase.countDocuments({ isDeleted: false, status: 'barcode_pending' });
-    const pendingVerificationCount = await StockBox.countDocuments({ isDeleted: false, verificationStatus: 'pending_verification' });
-    const newAssignedOrders = await SalesInvoice.countDocuments({ orderStatus: { $in: ['new', 'viewed'] } });
-    const pickingInProgressCount = await SalesInvoice.countDocuments({ orderStatus: 'picking_started' });
-    const pendingDealerApprovalCount = await SalesInvoice.countDocuments({ orderStatus: 'sent_to_dealer' });
-    const completedTodayCount = await SalesInvoice.countDocuments({ orderStatus: 'completed', createdAt: { $gte: startOfDay } });
+    const [
+      todayPurchases,
+      pendingBarcodeCount,
+      pendingVerificationCount,
+      newAssignedOrders,
+      pickingInProgressCount,
+      pendingDealerApprovalCount,
+      completedTodayCount,
+      totalStock,
+      availableStock,
+      todayDispatches,
+      pendingDispatches
+    ] = await Promise.all([
+      Purchase.countDocuments({ isDeleted: { $ne: true }, createdAt: { $gte: startOfDay } }),
+      Purchase.countDocuments({ isDeleted: { $ne: true }, status: 'barcode_pending' }),
+      StockBox.countDocuments({ isDeleted: { $ne: true }, verificationStatus: 'pending_verification' }),
+      SalesInvoice.countDocuments({
+        orderStatus: { $in: ['new', 'viewed'] },
+        status: { $nin: ['dispatched', 'completed'] },
+        isRejected: { $ne: true },
+        isCancelled: { $ne: true }
+      }),
+      SalesInvoice.countDocuments({
+        orderStatus: 'picking_started',
+        status: { $nin: ['dispatched', 'completed'] },
+        isRejected: { $ne: true },
+        isCancelled: { $ne: true }
+      }),
+      SalesInvoice.countDocuments({ orderStatus: { $in: ['sent_to_dealer', 'dealer_approved'] } }),
+      SalesInvoice.countDocuments({
+        $or: [{ orderStatus: 'completed' }, { status: 'dispatched' }],
+        updatedAt: { $gte: startOfDay }
+      }),
+      StockBox.countDocuments({ isDeleted: { $ne: true } }),
+      StockBox.countDocuments({ isDeleted: { $ne: true }, status: 'available' }),
+      StockBox.countDocuments({ isDeleted: { $ne: true }, status: 'dispatched', updatedAt: { $gte: startOfDay } }),
+      StockBox.countDocuments({ isDeleted: { $ne: true }, status: 'reserved' })
+    ]);
 
     return res.json({
       success: true,
@@ -780,9 +1231,39 @@ const getUserDashboardSummary = async (req, res) => {
         newAssignedOrders,
         pickingInProgressCount,
         pendingDealerApprovalCount,
-        completedTodayCount
+        completedTodayCount,
+        totalStock,
+        availableStock,
+        todayDispatches,
+        pendingDispatches
       }
     });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+const cancelAssignedOrder = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { reason } = req.body;
+    const actor = req.user?.username || 'warehouse1';
+
+    const order = await cancelOrderLocally(id, reason, actor);
+    return res.json({
+      success: true,
+      message: `Order #${order.invoiceNo} cancelled successfully.`,
+      order
+    });
+  } catch (err) {
+    return res.status(400).json({ success: false, message: err.message });
+  }
+};
+
+const triggerWarehouseB2BSync = async (req, res) => {
+  try {
+    const result = await syncB2BInvoices();
+    return res.json(result);
   } catch (err) {
     return res.status(500).json({ success: false, message: err.message });
   }
@@ -806,5 +1287,7 @@ module.exports = {
   generateDeliveryInvoice,
   markOrderSentToDealer,
   getDealerApprovalStatus,
-  getUserDashboardSummary
+  getUserDashboardSummary,
+  cancelAssignedOrder,
+  triggerWarehouseB2BSync
 };

@@ -82,6 +82,11 @@ export default function GlobalSearchDropdown({ placeholder, className = '' }) {
     navigate(`/stock?purchaseInvoice=${encodeURIComponent(invoice.invoiceNumber)}`);
   };
 
+  const handleSelectSalesInvoice = (inv) => {
+    setIsOpen(false);
+    navigate(`/invoices?view=${encodeURIComponent(inv.invoiceNo)}`);
+  };
+
   const handleSelectDealer = (dealer) => {
     setIsOpen(false);
     navigate(`/dealers`);
@@ -91,6 +96,7 @@ export default function GlobalSearchDropdown({ placeholder, className = '' }) {
     results.products.length > 0 ||
     results.boxes.length > 0 ||
     results.invoices.length > 0 ||
+    (results.salesInvoices && results.salesInvoices.length > 0) ||
     results.dealers.length > 0;
 
   return (
@@ -130,7 +136,81 @@ export default function GlobalSearchDropdown({ placeholder, className = '' }) {
         <div className="absolute left-0 right-0 top-full mt-2 bg-white rounded-2xl border border-slate-200 shadow-2xl z-50 max-h-[480px] overflow-y-auto divide-y divide-slate-100">
           {!hasResults && !loading && (
             <div className="p-6 text-center text-slate-400 text-xs font-medium">
-              No matching products, QR boxes, invoices, or dealers found for "{query}".
+              No matching products, QR boxes, sales bills, or dealers found for "{query}".
+            </div>
+          )}
+
+          {/* SECTION: ASSIGNED SALES BILLS / INVOICES */}
+          {results.salesInvoices && results.salesInvoices.length > 0 && (
+            <div className="p-3 bg-emerald-50/30">
+              <div className="px-2 py-1 text-[10px] font-black text-[#0F6E56] uppercase tracking-wider flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <FileText className="w-3.5 h-3.5 text-[#0F6E56]" />
+                  <span>Assigned Sales Bills ({results.salesInvoices.length})</span>
+                </div>
+                <span className="text-[9px] text-slate-400 normal-case">Click to view bill items</span>
+              </div>
+              <div className="mt-1 space-y-1">
+                {results.salesInvoices.map((inv) => {
+                  const isRejected = inv.orderStatus === 'rejected' || inv.isRejected;
+                  const isCancelled = inv.orderStatus === 'cancelled' || inv.isCancelled;
+                  const totalUnits = inv.items?.reduce((sum, it) => sum + (it.quantity || 0), 0) || 0;
+
+                  return (
+                    <div
+                      key={inv._id}
+                      onClick={() => handleSelectSalesInvoice(inv)}
+                      className="p-2.5 rounded-xl bg-white hover:bg-emerald-50 border border-slate-200/80 cursor-pointer flex items-center justify-between transition-all group shadow-2xs"
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-xs shrink-0 ${
+                          isRejected || isCancelled
+                            ? 'bg-rose-100 text-rose-700'
+                            : 'bg-emerald-100 text-[#0F6E56]'
+                        }`}>
+                          <FileText className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <p className="text-xs font-mono font-black text-[#0F6E56] group-hover:underline">
+                              Bill #{inv.invoiceNo}
+                            </p>
+                            {isRejected ? (
+                              <span className="bg-rose-100 text-rose-800 text-[9px] font-black px-1.5 py-0.2 rounded">
+                                REJECTED
+                              </span>
+                            ) : isCancelled ? (
+                              <span className="bg-rose-100 text-rose-800 text-[9px] font-black px-1.5 py-0.2 rounded">
+                                CANCELLED
+                              </span>
+                            ) : (
+                              <span className="bg-blue-100 text-blue-800 text-[9px] font-black px-1.5 py-0.2 rounded uppercase">
+                                {inv.orderStatus || 'NEW'}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[11px] font-bold text-slate-800">
+                            {inv.dealerName} {inv.garageName ? `(${inv.garageName})` : ''}
+                          </p>
+                          <p className="text-[10px] text-slate-500">
+                            {inv.items?.length || 0} items ({totalUnits} boxes)
+                            {inv.destination ? ` • Dest: ${inv.destination}` : ''}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        {inv.totalAmount > 0 && (
+                          <span className="text-[11px] font-mono font-bold text-slate-700">
+                            ₹{Number(inv.totalAmount).toLocaleString('en-IN')}
+                          </span>
+                        )}
+                        <ChevronRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-[#0F6E56]" />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
 

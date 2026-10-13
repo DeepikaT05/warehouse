@@ -83,7 +83,7 @@ export default function DeliveryStatement() {
           dispatchPhotoUploadedAt: new Date()
         }));
         setPhotoPreview(null);
-        alert('📷 Loaded products photo proof saved successfully!');
+        alert('Loaded products photo proof saved successfully!');
         fetchDispatches();
       }
     } catch (err) {
@@ -140,7 +140,7 @@ export default function DeliveryStatement() {
                   <div className="mt-2 flex items-center justify-between text-[10px]">
                     <span className="text-slate-500">Invoice: #{d.salesInvoiceNo}</span>
                     <span className={`font-bold px-2 py-0.5 rounded-md ${d.dispatchPhotoUrl ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
-                      {d.dispatchPhotoUrl ? '📷 Photo Proof Attached' : '📷 Photo Pending'}
+                      {d.dispatchPhotoUrl ? 'Photo Proof Attached' : 'Photo Pending'}
                     </span>
                   </div>
                 </div>
@@ -247,7 +247,7 @@ export default function DeliveryStatement() {
                           className="w-full bg-[#0F6E56] hover:bg-[#0c5946] text-white font-extrabold text-xs py-3 rounded-xl shadow-lg transition-all flex items-center justify-center gap-2"
                         >
                           <CheckCircle2 className="w-4 h-4" />
-                          <span>{uploadingPhoto ? 'Saving Photo Proof...' : '✅ Save Dispatched Products Photo Proof'}</span>
+                          <span>{uploadingPhoto ? 'Saving Photo Proof...' : 'Save Dispatched Products Photo Proof'}</span>
                         </button>
                       </div>
                     ) : (
@@ -269,7 +269,7 @@ export default function DeliveryStatement() {
                             <p className="text-[10px] text-slate-400 mt-0.5">Capture all boxes on truck before finalizing dispatch</p>
                           </div>
                           <span className="inline-block bg-[#0F6E56] hover:bg-[#0c5946] text-white font-bold text-xs px-4 py-2 rounded-xl transition-colors shadow mt-2">
-                            📷 Take / Upload Loaded Products Photo
+                            Take / Upload Loaded Products Photo
                           </span>
                         </label>
                       </div>
@@ -285,7 +285,7 @@ export default function DeliveryStatement() {
                   </span>
                   <span className="text-xs font-bold text-slate-700">Invoice #{selectedDispatch.salesInvoiceNo}</span>
                   <span className="bg-slate-100 text-slate-700 text-[10px] font-extrabold px-2 py-0.5 rounded-md border border-slate-300">
-                    📦 A5 Box Attachment Format
+                    A5 Box Attachment Format
                   </span>
                 </div>
 
@@ -342,7 +342,7 @@ export default function DeliveryStatement() {
                       <p className="font-bold text-[#0F6E56]">Store: {selectedDispatch.dealerId?.garageName}</p>
                     )}
                     <p className="text-slate-700 leading-tight">
-                      📍 {[selectedDispatch.dealerId?.address, selectedDispatch.dealerId?.city, selectedDispatch.dealerId?.state, selectedDispatch.dealerId?.pincode].filter(Boolean).join(', ') || 'Address on file'}
+                      {[selectedDispatch.dealerId?.address, selectedDispatch.dealerId?.city, selectedDispatch.dealerId?.state, selectedDispatch.dealerId?.pincode].filter(Boolean).join(', ') || 'Address on file'}
                     </p>
                     <p className="text-slate-600">
                       Phone: <span className="font-bold text-slate-800">{selectedDispatch.dealerId?.phone || 'N/A'}</span> | GST: <span className="font-mono">{selectedDispatch.dealerId?.gstNumber || 'N/A'}</span>

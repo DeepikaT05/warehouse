@@ -29,13 +29,13 @@ import {
 
 import { parsePetiWeights, matchesSearch, getPiecesPerPeti } from './StockManagement';
 
-const QR_SUMMARY_CACHE_KEY = 'vaniki_qr_summary_cache_v5';
+const QR_SUMMARY_CACHE_KEY = 'vaniki_qr_summary_cache_v7';
 const QR_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 function getCachedSummary() {
   try {
     Object.keys(sessionStorage).forEach(k => {
-      if (k.startsWith('vaniki_qr_') && !k.includes('_v5')) {
+      if (k.startsWith('vaniki_qr_') && !k.includes('_v7')) {
         sessionStorage.removeItem(k);
       }
     });
@@ -68,15 +68,86 @@ function clearQRSummaryCache() {
 // Generate exact 1-Sticker-Per-Peti records with correct single Peti weight
 export function getInvoicePetis(group, loadedBoxes = []) {
   if (!group) return [];
-  const totalPetis = group.cases || group.petiCount || 1;
+
+  // GUARD: Never generate labels for 0 or negative stock!
+  const availCount = group.availableBoxes !== undefined ? group.availableBoxes : (group.availablePieces !== undefined ? group.availablePieces : group.totalBoxes);
+  if (availCount !== undefined && availCount <= 0) return [];
+
   const pcsPerPeti = group.conversion || group.pcsPerPeti || getPiecesPerPeti(group.packing || group.weight) || 10;
+  
+  // Total petis to print must reflect AVAILABLE stock only!
+  let totalPetis = group.availableCases !== undefined
+    ? group.availableCases
+    : (group.cases || (availCount > 0 ? Math.ceil(availCount / pcsPerPeti) : 0));
+
+  if (totalPetis <= 0) return [];
   const caseInfo = parsePetiWeights(group.packing, pcsPerPeti, totalPetis, group.weight);
 
   const petis = [];
 
   if (loadedBoxes && loadedBoxes.length > 0) {
-    for (let i = 0; i < loadedBoxes.length; i += pcsPerPeti) {
-      const chunk = loadedBoxes.slice(i, i + pcsPerPeti);
+    // CRITICAL: Filter OUT dispatched boxes! Only available boxes can have stickers printed!
+    let availableLoadedBoxes = loadedBoxes.filter(b => b.status === 'available');
+
+    // Filter to this group's product & batch if available
+    if (group.productName) {
+      const gProd = group.productName.trim().toLowerCase();
+      const prodFiltered = availableLoadedBoxes.filter(b => b.productName && b.productName.trim().toLowerCase() === gProd);
+      if (prodFiltered.length > 0) {
+        availableLoadedBoxes = prodFiltered;
+      }
+    }
+    if (group.batchNumber) {
+      const gBatch = group.batchNumber.trim().toLowerCase();
+      const batchFiltered = availableLoadedBoxes.filter(b => b.batchNumber && b.batchNumber.trim().toLowerCase() === gBatch);
+      if (batchFiltered.length > 0) {
+        availableLoadedBoxes = batchFiltered;
+      }
+    }
+
+    if (availableLoadedBoxes.length === 0) return [];
+
+    const distinctQrs = new Set(availableLoadedBoxes.map(b => b.qrId).filter(Boolean));
+    const hasUniqueQrs = distinctQrs.size === availableLoadedBoxes.length && availableLoadedBoxes.length > 0;
+    const isOneBoxPerPeti = hasUniqueQrs || (Number(totalPetis) > 0 && Math.abs(availableLoadedBoxes.length - Number(totalPetis)) <= 2);
+    if (isOneBoxPerPeti || availableLoadedBoxes.length === Number(totalPetis) || availableLoadedBoxes.every(b => b.cases === 1)) {
+      return availableLoadedBoxes.map((b, idx) => {
+        const petiNum = idx + 1;
+        const petiTag = availableLoadedBoxes.length > 1 ? ` (${petiNum}/${availableLoadedBoxes.length})` : '';
+        const pPacking = b.packing || b.weight || group.packing || '10 LTR';
+        const pConv = Number(b.conversion) > 0 ? Number(b.conversion) : pcsPerPeti;
+        const pWt = b.weight || parsePetiWeights(pPacking, pConv, 1, b.weight).caseWtStr;
+
+        return {
+          _id: `${group.invoiceNo}_PETI_${b.qrId || petiNum}`,
+          boxId: b._id,
+          invoiceNo: group.invoiceNo,
+          purchaseInvoice: group.invoiceNo,
+          petiNumber: petiNum,
+          totalPetis: availableLoadedBoxes.length,
+          petiTitle: `Peti #${petiNum} • ${b.productName || group.productName}${availableLoadedBoxes.length > 1 ? ` (${petiNum} of ${availableLoadedBoxes.length})` : ''}`,
+          petiTag,
+          petiWeight: pWt,
+          caseWtStr: pWt,
+          weight: `${pWt}${petiTag}`,
+          packing: pPacking,
+          productName: b.productName || group.productName,
+          batchNumber: b.batchNumber || group.batchNumber,
+          warehouseLocation: b.warehouseLocation || group.warehouseLocation || 'FACTORY GODOWN',
+          pieces: pConv,
+          totalPieces: pConv,
+          availablePieces: pConv,
+          qrId: b.qrId,
+          firstQr: b.qrId,
+          lastQr: b.qrId,
+          status: 'available',
+          boxes: [b]
+        };
+      });
+    }
+
+    for (let i = 0; i < availableLoadedBoxes.length; i += pcsPerPeti) {
+      const chunk = availableLoadedBoxes.slice(i, i + pcsPerPeti);
       const petiNum = Math.floor(i / pcsPerPeti) + 1;
       const firstBox = chunk[0] || {};
       const lastBox = chunk[chunk.length - 1] || {};
@@ -84,7 +155,7 @@ export function getInvoicePetis(group, loadedBoxes = []) {
       const petiTag = totalPetis > 1 ? ` (${petiNum}/${totalPetis})` : '';
 
       petis.push({
-        _id: `${group.invoiceNo}_PETI_${petiNum}`,
+        _id: `${group.invoiceNo}_PETI_${firstBox.qrId || petiNum}`,
         boxId: firstBox._id,
         invoiceNo: group.invoiceNo,
         purchaseInvoice: group.invoiceNo,
@@ -101,11 +172,11 @@ export function getInvoicePetis(group, loadedBoxes = []) {
         warehouseLocation: group.warehouseLocation || firstBox.warehouseLocation || 'RAIPUR GODOWN',
         pieces: chunk.length,
         totalPieces: chunk.length,
-        availablePieces: chunk.filter(b => b.status === 'available').length,
+        availablePieces: chunk.length,
         qrId,
         firstQr: firstBox.qrId,
         lastQr: lastBox.qrId,
-        status: chunk.some(b => b.status === 'available') ? 'available' : (firstBox.status || 'available'),
+        status: 'available',
         boxes: chunk
       });
     }
@@ -132,8 +203,9 @@ export function getInvoicePetis(group, loadedBoxes = []) {
       }
       const petiTag = totalPetis > 1 ? ` (${petiNum}/${totalPetis})` : '';
 
+      const prodCode = (group.productName || '').replace(/[^a-zA-Z0-9]/g, '');
       petis.push({
-        _id: `${group.invoiceNo}_PETI_${petiNum}`,
+        _id: `${group.invoiceNo}_${prodCode}_PETI_${petiNum}`,
         invoiceNo: group.invoiceNo,
         purchaseInvoice: group.invoiceNo,
         petiNumber: petiNum,
@@ -243,7 +315,12 @@ export default function QRPrintPage() {
       try {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 3500);
-        const res = await fetch(ep, { method: 'GET', mode: 'cors', signal: controller.signal });
+        const res = await fetch(ep, {
+          method: 'GET',
+          mode: 'cors',
+          targetAddressSpace: 'loopback',
+          signal: controller.signal
+        });
         clearTimeout(timeoutId);
         if (res.ok) {
           const data = await res.json();
@@ -273,7 +350,12 @@ export default function QRPrintPage() {
       try {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 4000);
-        const res = await fetch(ep, { method: 'GET', mode: 'cors', signal: controller.signal });
+        const res = await fetch(ep, {
+          method: 'GET',
+          mode: 'cors',
+          targetAddressSpace: 'loopback',
+          signal: controller.signal
+        });
         clearTimeout(timeoutId);
         if (res.ok) {
           const data = await res.json();
@@ -335,17 +417,21 @@ export default function QRPrintPage() {
       const extractAndSelectPetis = (fetchedBoxes, targetQr = null) => {
         const map = new Map();
         fetchedBoxes.forEach(box => {
-          const invKey = box.purchaseInvoice || 'Unassigned Invoice';
+          const invNo = box.purchaseInvoice || 'Unassigned Invoice';
+          const pName = box.productName || 'Product';
+          const pBatch = box.batchNumber || '';
+          const pPack = box.packing || box.weight || '1 kg';
+          const invKey = `${invNo}__${pName}__${pBatch}__${pPack}`;
           if (!map.has(invKey)) {
             map.set(invKey, {
-              invoiceNo: invKey,
-              productName: box.productName,
-              batchNumber: box.batchNumber,
-              packing: box.packing || box.weight || '1 kg',
-              weight: box.weight || box.packing || '1 kg',
+              invoiceNo: invNo,
+              productName: pName,
+              batchNumber: pBatch,
+              packing: pPack,
+              weight: box.weight || pPack,
               cases: box.cases || 1,
               conversion: box.conversion || 10,
-              warehouseLocation: box.warehouseLocation || 'RAIPUR GODOWN',
+              warehouseLocation: box.warehouseLocation || 'FACTORY GODOWN',
               boxes: []
             });
           }
@@ -355,7 +441,8 @@ export default function QRPrintPage() {
         const petis = [];
         map.forEach(grp => {
           grp.totalBoxes = grp.boxes.length;
-          grp.petiCount = Math.max(1, Math.ceil(grp.totalBoxes / (grp.conversion || 10)));
+          grp.availableBoxes = grp.boxes.filter(b => b.status === 'available').length;
+          grp.cases = grp.availableBoxes;
           petis.push(...getInvoicePetis(grp, grp.boxes));
         });
 
@@ -386,26 +473,16 @@ export default function QRPrintPage() {
           extractAndSelectPetis(fetched);
         }
       }
-      // 3. Specific Purchase Invoice filter / param
-      else if (purchaseInvoiceFilter || purchaseInvoiceParam) {
-        const invNo = purchaseInvoiceFilter || purchaseInvoiceParam;
-        const res = await api.get('/stock', { params: { purchaseInvoice: invNo, limit: 2000 } });
+      // 3. Specific Purchase Invoice URL parameter (from deep link)
+      else if (purchaseInvoiceParam) {
+        const res = await api.get('/stock', { params: { purchaseInvoice: purchaseInvoiceParam, limit: 2000 } });
         if (res.data?.success) {
           const fetched = res.data.boxes || [];
           setBoxes(fetched);
           extractAndSelectPetis(fetched);
         }
       }
-      // 4. Free-text Search
-      else if (searchQuery.trim()) {
-        const res = await api.get('/stock', { params: { search: searchQuery.trim(), limit: 500 } });
-        if (res.data?.success) {
-          const fetched = res.data.boxes || [];
-          setBoxes(fetched);
-          extractAndSelectPetis(fetched);
-        }
-      }
-      // 5. DEFAULT MODE: Load fast invoice summary (15KB, ~40ms!)
+      // 4. DEFAULT MODE: Load fast invoice summary (15KB, ~40ms!)
       else {
         if (!forceRefresh) {
           const cached = getCachedSummary();
@@ -430,7 +507,7 @@ export default function QRPrintPage() {
     } finally {
       setLoading(false);
     }
-  }, [purchaseId, purchaseInvoiceParam, purchaseInvoiceFilter, singleQrParam, searchQuery]);
+  }, [purchaseId, purchaseInvoiceParam, singleQrParam]);
 
   useEffect(() => {
     fetchBoxesToPrint();
@@ -445,7 +522,7 @@ export default function QRPrintPage() {
   }, [invoicesSummary, boxes]);
 
   // Determine if in summary list mode (default) vs explicit boxes mode
-  const isSummaryMode = !purchaseId && !purchaseInvoiceParam && !purchaseInvoiceFilter && !singleQrParam && !searchQuery.trim();
+  const isSummaryMode = !purchaseId && !purchaseInvoiceParam && !singleQrParam && boxes.length === 0;
 
   // Combine explicitly loaded boxes + any on-demand loaded invoice boxes
   const allLoadedBoxes = useMemo(() => {
@@ -478,47 +555,75 @@ export default function QRPrintPage() {
   // Group invoices for the grouped accordion view
   const invoiceGroups = useMemo(() => {
     if (isSummaryMode) {
-      let list = invoicesSummary.map(inv => ({
-        invoiceNo: inv.invoiceNo,
-        productName: inv.productName,
-        batchNumber: inv.batchNumber,
-        packing: inv.packing || inv.weight || '1 kg',
-        weight: inv.weight || inv.packing || '1 kg',
-        cases: inv.cases || inv.petiCount || 1,
-        conversion: inv.conversion || inv.pcsPerPeti || 10,
-        warehouseLocation: inv.warehouseLocation || 'RAIPUR GODOWN',
-        totalBoxes: inv.totalBoxes,
-        petiCount: inv.cases || inv.petiCount || Math.max(1, Math.ceil(inv.totalBoxes / 10)),
-        firstQr: inv.firstQr,
-        lastQr: inv.lastQr,
-        boxes: invoiceBoxesMap[inv.invoiceNo] || []
-      }));
+      let list = invoicesSummary
+        .filter(inv => {
+          const avail = inv.availableBoxes !== undefined ? inv.availableBoxes : (inv.availablePieces !== undefined ? inv.availablePieces : inv.totalBoxes);
+          return Number(avail) > 0;
+        });
+
+      if (purchaseInvoiceFilter) {
+        list = list.filter(inv => inv.invoiceNo === purchaseInvoiceFilter);
+      }
 
       if (searchQuery && searchQuery.trim()) {
         const term = searchQuery.trim();
         list = list.filter(inv => {
-          const combined = `${inv.invoiceNo} ${inv.productName} ${inv.batchNumber} ${inv.packing} ${inv.weight} ${inv.warehouseLocation}`;
+          const combined = `${inv.invoiceNo} ${inv.productName} ${inv.batchNumber} ${inv.packing || ''} ${inv.weight || ''} ${inv.warehouseLocation || ''} ${inv.firstQr || ''} ${inv.lastQr || ''}`;
           return matchesSearch(combined, term);
         });
       }
 
-      return list;
+      return list.map(inv => {
+        const availBoxes = Math.max(0, inv.availableBoxes !== undefined ? inv.availableBoxes : inv.totalBoxes);
+        const pcsPerPeti = inv.conversion || inv.pcsPerPeti || 10;
+        const availCases = Math.max(0, inv.availableCases !== undefined ? inv.availableCases : (inv.cases || Math.ceil(availBoxes / pcsPerPeti)));
+
+        const matchingBoxes = (invoiceBoxesMap[inv.invoiceNo] || []).filter(b => {
+          if (b.status !== 'available') return false;
+          if (inv.productName && b.productName && b.productName.trim().toLowerCase() !== inv.productName.trim().toLowerCase()) return false;
+          if (inv.batchNumber && b.batchNumber && b.batchNumber.trim().toLowerCase() !== inv.batchNumber.trim().toLowerCase()) return false;
+          return true;
+        });
+
+        return {
+          invoiceNo: inv.invoiceNo,
+          productName: inv.productName,
+          batchNumber: inv.batchNumber,
+          packing: inv.packing || inv.weight || '1 kg',
+          weight: inv.weight || inv.packing || '1 kg',
+          cases: availCases,
+          petiCount: availCases,
+          availableCases: availCases,
+          availableBoxes: availBoxes,
+          conversion: pcsPerPeti,
+          warehouseLocation: inv.warehouseLocation || 'RAIPUR GODOWN',
+          totalBoxes: availBoxes,
+          firstQr: inv.firstQr,
+          lastQr: inv.lastQr,
+          boxes: matchingBoxes
+        };
+      });
     }
 
-    // In filtered boxes mode, group the returned boxes
+    // In filtered boxes mode, ONLY group available boxes (skip dispatched boxes!)
     const map = new Map();
-    filteredBoxes.forEach(box => {
-      const invKey = box.purchaseInvoice || 'Unassigned Invoice';
+    const availableOnlyBoxes = filteredBoxes.filter(b => b.status === 'available');
+    availableOnlyBoxes.forEach(box => {
+      const invNo = box.purchaseInvoice || 'Unassigned Invoice';
+      const pName = box.productName || 'Product';
+      const pBatch = box.batchNumber || '';
+      const pPack = box.packing || box.weight || '1 kg';
+      const invKey = `${invNo}__${pName}__${pBatch}__${pPack}`;
       if (!map.has(invKey)) {
         map.set(invKey, {
-          invoiceNo: invKey,
-          productName: box.productName,
-          batchNumber: box.batchNumber,
-          packing: box.packing || box.weight || '1 kg',
-          weight: box.weight || box.packing || '1 kg',
+          invoiceNo: invNo,
+          productName: pName,
+          batchNumber: pBatch,
+          packing: pPack,
+          weight: box.weight || pPack,
           cases: box.cases || 1,
           conversion: box.conversion || 10,
-          warehouseLocation: box.warehouseLocation || 'Rack A1',
+          warehouseLocation: box.warehouseLocation || 'FACTORY GODOWN',
           totalBoxes: 0,
           petiCount: 0,
           firstQr: box.qrId,
@@ -530,10 +635,13 @@ export default function QRPrintPage() {
       grp.boxes.push(box);
       grp.totalBoxes += 1;
       grp.lastQr = box.qrId;
-      grp.petiCount = Math.max(1, Math.ceil(grp.totalBoxes / (grp.conversion || 10)));
+      grp.petiCount = grp.boxes.length;
+      grp.cases = grp.boxes.length;
+      grp.availableCases = grp.boxes.length;
+      grp.availableBoxes = grp.boxes.length;
     });
     return Array.from(map.values());
-  }, [isSummaryMode, invoicesSummary, invoiceBoxesMap, filteredBoxes, searchQuery]);
+  }, [isSummaryMode, invoicesSummary, invoiceBoxesMap, filteredBoxes, searchQuery, purchaseInvoiceFilter]);
 
   // All Petis across all displayed invoices (1 sticker per Peti)
   const allAvailablePetis = useMemo(() => {
@@ -573,10 +681,14 @@ export default function QRPrintPage() {
         if (res.data?.success && res.data.boxes?.length > 0) {
           const fetched = res.data.boxes;
           setInvoiceBoxesMap(prev => ({ ...prev, [invoiceNo]: fetched }));
-          const targetGroup = invoiceGroups.find(g => g.invoiceNo === invoiceNo);
-          if (targetGroup) {
-            const petis = getInvoicePetis(targetGroup, fetched);
-            setSelectedPetiIds(prev => Array.from(new Set([...prev, ...petis.map(p => p._id)])));
+          const matchingGroups = invoiceGroups.filter(g => g.invoiceNo === invoiceNo);
+          const allNewPetis = [];
+          matchingGroups.forEach(grp => {
+            const petis = getInvoicePetis(grp, fetched);
+            allNewPetis.push(...petis);
+          });
+          if (allNewPetis.length > 0) {
+            setSelectedPetiIds(prev => Array.from(new Set([...prev, ...allNewPetis.map(p => p._id)])));
           }
         }
       } catch (err) {
@@ -666,161 +778,114 @@ export default function QRPrintPage() {
   const printBoxesDirectly = async (boxesToPrint) => {
     if (!boxesToPrint || boxesToPrint.length === 0) return;
 
-    if (isDirectActive) {
-      setPrintingStatus({
-        type: 'loading',
-        title: 'Printing Peti Labels',
-        message: `Sending ${boxesToPrint.length} Peti sticker(s) directly to ${detectedPrinterName || 'TSC TE244'}...`,
-        logs: [
-          `Preparing ${boxesToPrint.length} Peti sticker(s) in TSPL 2-Across layout`,
-          `Connecting to local printer daemon on http://127.0.0.1:9191/print-boxes...`
-        ]
-      });
-      
-      const endpoints = [
-        'http://127.0.0.1:9191/print-boxes',
-        'http://localhost:9191/print-boxes'
-      ];
-
-      for (const ep of endpoints) {
-        try {
-          const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 10000);
-          const res = await fetch(ep, {
-            method: 'POST',
-            mode: 'cors',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ boxes: boxesToPrint }),
-            signal: controller.signal
-          });
-          clearTimeout(timeoutId);
-          if (res.ok) {
-            const data = await res.json();
-            if (data && data.success) {
-              setIsLocalPrinterReady(true);
-              setPrintingStatus({
-                type: 'success',
-                title: 'Print Command Delivered!',
-                message: `Successfully sent ${boxesToPrint.length} Peti sticker(s) to ${data.printer || detectedPrinterName || 'TSC TE244'}!`,
-                logs: [
-                  `Connected to local service on port 9191: 200 OK`,
-                  `Transmitted TSPL command directly to printer spooler`,
-                  `Printer: ${data.printer || detectedPrinterName || 'TSC TE244'}`,
-                  `Total labels queued: ${boxesToPrint.length} Peti sticker(s)`
-                ]
-              });
-              setTimeout(() => setPrintingStatus(null), 3500);
-              return;
-            }
-          }
-        } catch (err) {}
-      }
-
-      setPrintingStatus({
-        type: 'error',
-        title: 'Local Printer Service Unreachable',
-        message: 'Could not connect to Windows Printer Service on port 9191. Opening standard browser print dialog...',
-        logs: [
-          `Attempted connection to http://127.0.0.1:9191/print-boxes`,
-          `Ensure 'windows-printer-service' is running on your Windows PC.`,
-          `Switching to standard browser print dialog in 2 seconds...`
-        ]
-      });
-      setTimeout(() => {
-        setPrintingStatus(null);
-        window.print();
-      }, 2500);
-      return;
-    }
-
     setPrintingStatus({
-      type: 'info',
-      title: 'Opening Print Preview',
-      message: `Preparing ${boxesToPrint.length} Peti sticker(s) for browser printing...`,
+      type: 'loading',
+      title: 'Printing Peti Labels',
+      message: `Sending ${boxesToPrint.length} Peti sticker(s) directly to ${detectedPrinterName || 'TSC TE244'}...`,
       logs: [
-        `Labels to print: ${boxesToPrint.length}`,
-        `Printer Format: ${printerFormat}`,
-        `Opening system print dialog...`
+        `Preparing ${boxesToPrint.length} Peti sticker(s) in TSPL 2-Across layout`,
+        `Connecting to local printer daemon on http://127.0.0.1:9191/print-boxes...`
       ]
     });
-    setTimeout(() => {
-      setPrintingStatus(null);
-      window.print();
-    }, 1200);
+    
+    const endpoints = [
+      'http://127.0.0.1:9191/print-boxes',
+      'http://localhost:9191/print-boxes'
+    ];
+
+    for (const ep of endpoints) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 8000);
+        const res = await fetch(ep, {
+          method: 'POST',
+          mode: 'cors',
+          targetAddressSpace: 'loopback',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ boxes: boxesToPrint }),
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.success) {
+            setIsLocalPrinterReady(true);
+            setPrintingStatus({
+              type: 'success',
+              title: 'Print Command Delivered!',
+              message: `Successfully sent ${boxesToPrint.length} Peti sticker(s) directly to ${data.printer || detectedPrinterName || 'TSC TE244'}!`,
+              logs: [
+                `Connected to local service on port 9191: 200 OK`,
+                `Transmitted TSPL command directly to printer spooler`,
+                `Printer: ${data.printer || detectedPrinterName || 'TSC TE244'}`,
+                `Total labels printed: ${boxesToPrint.length} Peti sticker(s)`
+              ]
+            });
+            setTimeout(() => setPrintingStatus(null), 3000);
+            return;
+          }
+        }
+      } catch (err) {}
+    }
+
+    // If local printer service on port 9191 is not reachable:
+    // DO NOT open window.print()! Tell user to start the local service!
+    setPrintingStatus({
+      type: 'error',
+      title: 'Windows Printer Service Offline (Port 9191)',
+      message: 'Chrome ne local printer port 9191 ko block kiya hai ya service start nahi hai.',
+      logs: [
+        'Attempted connection to http://127.0.0.1:9191/print-boxes (Blocked by Chrome or Offline)',
+        'FIX IN CHROME (10 Seconds):',
+        '1. Chrome address bar me URL ke baayein (left) side icon (Tune/Sliders ya Padlock) par click karein.',
+        '2. "Site settings" par click karein.',
+        '3. "Insecure content" ko "Allow" par set karein.',
+        '4. Is page ko Reload karein (Ctrl + Shift + R) aur "Retry Direct Print" dabayein!'
+      ],
+      _retryBoxes: boxesToPrint
+    });
   };
 
   // Print Single Peti immediately
   const handlePrintSinglePeti = (peti) => {
     if (!peti) return;
-
-    if (isDirectActive) {
-      printBoxesDirectly([peti]);
-    } else {
-      setSelectedPetiIds([peti._id]);
-      setPrintPreset('1');
-      setPrintingStatus({
-        type: 'info',
-        title: 'Printing Single Peti',
-        message: `Selected ${peti.petiTitle || 'Peti'} (${peti.qrId || ''}). Opening print dialog...`,
-        logs: [
-          `Product: ${peti.productName}`,
-          `Peti ID: ${peti.qrId}`,
-          `Weight: ${peti.petiWeight || peti.caseWtStr || peti.weight || ''}`,
-          `Opening browser print dialog...`
-        ]
-      });
-      setTimeout(() => {
-        setPrintingStatus(null);
-        window.print();
-      }, 1200);
-    }
+    printBoxesDirectly([peti]);
   };
 
   // Test Print 1 Peti on Left label of 2-Across roll
   const handleSelectFirst1AndPrint = () => {
     if (allAvailablePetis.length > 0) {
       const firstPeti = allAvailablePetis[0];
-      if (isDirectActive) {
-        printBoxesDirectly([firstPeti]);
-      } else {
-        setSelectedPetiIds([firstPeti._id]);
-        setPrintPreset('1');
-        setPrintingStatus({
-          type: 'info',
-          title: 'Test Print 1 Peti',
-          message: `Testing 1 Peti label (${firstPeti.qrId || ''}). Opening print dialog...`,
-          logs: [
-            `Target: ${firstPeti.productName}`,
-            `Peti ID: ${firstPeti.qrId}`,
-            `Opening browser print dialog...`
-          ]
-        });
-        setTimeout(() => {
-          setPrintingStatus(null);
-          window.print();
-        }, 1200);
-      }
+      setSelectedPetiIds([firstPeti._id]);
+      setPrintPreset('1');
+      printBoxesDirectly([firstPeti]);
     }
   };
 
   // Print Entire Purchase Invoice Group (Peti stickers only)
   const handlePrintInvoiceGroup = async (group) => {
-    let boxesToPrint = invoiceBoxesMap[group.invoiceNo] || group.boxes || [];
+    const key = group.groupKey || group._id || group.invoiceNo;
+    let boxesToPrint = invoiceBoxesMap[key] || group.boxes || [];
     if (boxesToPrint.length === 0) {
       setPrintingStatus({
         type: 'loading',
         title: 'Loading Petis...',
-        message: `Fetching stock boxes for invoice ${group.invoiceNo}...`,
+        message: `Fetching stock boxes for ${group.productName || group.invoiceNo}...`,
         logs: [
-          `Querying /stock?purchaseInvoice=${group.invoiceNo}`,
+          `Querying /stock for invoice ${group.invoiceNo}`,
           `Please wait...`
         ]
       });
       try {
-        const res = await api.get('/stock', { params: { purchaseInvoice: group.invoiceNo, limit: 2000 } });
+        const params = { purchaseInvoice: group.invoiceNo, limit: 2000 };
+        if (group.productName) params.product = group.productName;
+        if (group.packing) params.packing = group.packing;
+        if (group.batchNumber) params.batch = group.batchNumber;
+
+        const res = await api.get('/stock', { params });
         if (res.data?.success && res.data.boxes?.length > 0) {
           boxesToPrint = res.data.boxes;
-          setInvoiceBoxesMap(prev => ({ ...prev, [group.invoiceNo]: boxesToPrint }));
+          setInvoiceBoxesMap(prev => ({ ...prev, [key]: boxesToPrint }));
         }
       } catch (err) {
         setPrintingStatus({
@@ -836,27 +901,7 @@ export default function QRPrintPage() {
 
     const petis = getInvoicePetis(group, boxesToPrint);
     if (petis && petis.length > 0) {
-      if (isDirectActive) {
-        printBoxesDirectly(petis);
-      } else {
-        const petiIds = petis.map(p => p._id);
-        setSelectedPetiIds(prev => Array.from(new Set([...prev, ...petiIds])));
-        setPrintingStatus({
-          type: 'info',
-          title: 'Invoice Print Preview',
-          message: `Preparing ${petis.length} Peti stickers for invoice ${group.invoiceNo}...`,
-          logs: [
-            `Invoice: #${group.invoiceNo}`,
-            `Product: ${group.productName || 'Multiple'}`,
-            `Total Petis: ${petis.length}`,
-            `Opening browser print dialog...`
-          ]
-        });
-        setTimeout(() => {
-          setPrintingStatus(null);
-          window.print();
-        }, 1200);
-      }
+      printBoxesDirectly(petis);
     }
   };
 
@@ -885,11 +930,7 @@ export default function QRPrintPage() {
   };
 
   const handleTriggerPrint = () => {
-    if (isDirectActive) {
-      printBoxesDirectly(petisToRender);
-    } else {
-      window.print();
-    }
+    printBoxesDirectly(petisToRender);
   };
 
   return (
@@ -1084,6 +1125,138 @@ export default function QRPrintPage() {
         </div>
       </div>
 
+      {/* Control Bar: Search Input, Purchase Invoice Filter & View Switcher (no-print) */}
+      <div className="no-print bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
+        {/* Search Input */}
+        <div className="relative flex-1 max-w-md">
+          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+          <input
+            type="text"
+            placeholder="Search Product Name, Batch Number, or QR ID..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-9 py-2 text-xs font-medium focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0F6E56] transition-all"
+          />
+          {searchQuery && (
+            <button
+              type="button"
+              onClick={() => setSearchQuery('')}
+              className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+
+        {/* MAIN PURCHASE INVOICE ID DROPDOWN FILTER */}
+        <div className="w-full md:w-56">
+          <select
+            value={purchaseInvoiceFilter}
+            onChange={(e) => setPurchaseInvoiceFilter(e.target.value)}
+            className="w-full bg-emerald-50/70 border border-emerald-200 text-[#0F6E56] font-extrabold rounded-xl px-3 py-2 text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0F6E56] cursor-pointer"
+          >
+            <option value="">All Purchase Invoice IDs</option>
+            {uniqueInvoices.map((inv) => (
+              <option key={inv} value={inv}>
+                Invoice: {inv}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Bulk Selection & Expand Controls */}
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={
+              isAllFilteredSelected
+                ? handleDeselectAllFiltered
+                : handleSelectAllFiltered
+            }
+            className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs px-3 py-2 rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer"
+          >
+            {isAllFilteredSelected ? (
+              <>
+                <Square className="w-3.5 h-3.5" />
+                <span>Deselect All</span>
+              </>
+            ) : (
+              <>
+                <CheckSquare className="w-3.5 h-3.5 text-[#0F6E56]" />
+                <span>Select All</span>
+              </>
+            )}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => toggleExpandAll(true)}
+            className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs px-3 py-2 rounded-xl transition-colors cursor-pointer"
+          >
+            Expand All
+          </button>
+          <button
+            type="button"
+            onClick={() => toggleExpandAll(false)}
+            className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs px-3 py-2 rounded-xl transition-colors cursor-pointer"
+          >
+            Collapse All
+          </button>
+          <button
+            type="button"
+            onClick={() => fetchBoxesToPrint(true)}
+            className="bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs px-3 py-2 rounded-xl transition-colors flex items-center gap-1.5 shadow-2xs cursor-pointer"
+            title="Refresh and invalidate cache"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 text-[#0F6E56] ${loading ? 'animate-spin' : ''}`} />
+            <span>Refresh</span>
+          </button>
+
+          {/* View Switcher */}
+          <div className="bg-slate-100 p-1 rounded-xl flex items-center gap-1 border border-slate-200 ml-1">
+            <button
+              type="button"
+              onClick={() => setViewMode('grouped')}
+              className={`px-2.5 py-1 rounded-lg text-xs transition-all flex items-center gap-1 cursor-pointer ${
+                viewMode === 'grouped'
+                  ? 'bg-white text-[#0F6E56] shadow-sm font-extrabold'
+                  : 'text-slate-500 hover:text-slate-800 font-medium'
+              }`}
+              title="Purchase Invoice Accordion List View (Default)"
+            >
+              <Layers className="w-3.5 h-3.5" />
+              <span>Invoice View</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setViewMode('grid')}
+              className={`p-1.5 rounded-lg transition-all cursor-pointer ${
+                viewMode === 'grid'
+                  ? 'bg-white text-[#0F6E56] shadow-sm font-bold'
+                  : 'text-slate-500 hover:text-slate-800'
+              }`}
+              title="Sticker Grid Preview View"
+            >
+              <Grid className="w-4 h-4" />
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setViewMode('table')}
+              className={`p-1.5 rounded-lg transition-all cursor-pointer ${
+                viewMode === 'table'
+                  ? 'bg-white text-[#0F6E56] shadow-sm font-bold'
+                  : 'text-slate-500 hover:text-slate-800'
+              }`}
+              title="Flat Box Table View"
+            >
+              <List className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      </div>
+
       {loading ? (
         <div className="p-8 text-center text-xs text-slate-500 font-medium flex items-center justify-center gap-2">
           <RefreshCw className="w-4 h-4 animate-spin text-[#0F6E56]" />
@@ -1091,130 +1264,6 @@ export default function QRPrintPage() {
         </div>
       ) : (
         <div className="space-y-4">
-          {/* Control Bar: Search Input, Purchase Invoice Filter & View Switcher (no-print) */}
-          <div className="no-print bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
-            {/* Search Input */}
-            <div className="relative flex-1 max-w-md">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
-              <input
-                type="text"
-                placeholder="Search Product Name, Batch Number, or QR ID..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-9 py-2 text-xs font-medium focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0F6E56] transition-all"
-              />
-              {searchQuery && (
-                <button
-                  onClick={() => setSearchQuery('')}
-                  className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              )}
-            </div>
-
-            {/* MAIN PURCHASE INVOICE ID DROPDOWN FILTER */}
-            <div className="w-full md:w-56">
-              <select
-                value={purchaseInvoiceFilter}
-                onChange={(e) => setPurchaseInvoiceFilter(e.target.value)}
-                className="w-full bg-emerald-50/70 border border-emerald-200 text-[#0F6E56] font-extrabold rounded-xl px-3 py-2 text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0F6E56] cursor-pointer"
-              >
-                <option value="">All Purchase Invoice IDs</option>
-                {uniqueInvoices.map((inv) => (
-                  <option key={inv} value={inv}>
-                    Invoice: {inv}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Bulk Selection & Expand Controls */}
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                onClick={
-                  isAllFilteredSelected
-                    ? handleDeselectAllFiltered
-                    : handleSelectAllFiltered
-                }
-                className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs px-3 py-2 rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer"
-              >
-                {isAllFilteredSelected ? (
-                  <>
-                    <Square className="w-3.5 h-3.5" />
-                    <span>Deselect All</span>
-                  </>
-                ) : (
-                  <>
-                    <CheckSquare className="w-3.5 h-3.5 text-[#0F6E56]" />
-                    <span>Select All</span>
-                  </>
-                )}
-              </button>
-
-              <button
-                onClick={() => toggleExpandAll(true)}
-                className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs px-3 py-2 rounded-xl transition-colors cursor-pointer"
-              >
-                Expand All
-              </button>
-              <button
-                onClick={() => toggleExpandAll(false)}
-                className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs px-3 py-2 rounded-xl transition-colors cursor-pointer"
-              >
-                Collapse All
-              </button>
-              <button
-                onClick={() => fetchBoxesToPrint(true)}
-                className="bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs px-3 py-2 rounded-xl transition-colors flex items-center gap-1.5 shadow-2xs cursor-pointer"
-                title="Refresh and invalidate cache"
-              >
-                <RefreshCw className={`w-3.5 h-3.5 text-[#0F6E56] ${loading ? 'animate-spin' : ''}`} />
-                <span>Refresh</span>
-              </button>
-
-              {/* View Switcher */}
-              <div className="bg-slate-100 p-1 rounded-xl flex items-center gap-1 border border-slate-200 ml-1">
-                <button
-                  onClick={() => setViewMode('grouped')}
-                  className={`px-2.5 py-1 rounded-lg text-xs transition-all flex items-center gap-1 cursor-pointer ${
-                    viewMode === 'grouped'
-                      ? 'bg-white text-[#0F6E56] shadow-sm font-extrabold'
-                      : 'text-slate-500 hover:text-slate-800 font-medium'
-                  }`}
-                  title="Purchase Invoice Accordion List View (Default)"
-                >
-                  <Layers className="w-3.5 h-3.5" />
-                  <span>Invoice View</span>
-                </button>
-
-                <button
-                  onClick={() => setViewMode('grid')}
-                  className={`p-1.5 rounded-lg transition-all cursor-pointer ${
-                    viewMode === 'grid'
-                      ? 'bg-white text-[#0F6E56] shadow-sm font-bold'
-                      : 'text-slate-500 hover:text-slate-800'
-                  }`}
-                  title="Sticker Grid Preview View"
-                >
-                  <Grid className="w-4 h-4" />
-                </button>
-
-                <button
-                  onClick={() => setViewMode('table')}
-                  className={`p-1.5 rounded-lg transition-all cursor-pointer ${
-                    viewMode === 'table'
-                      ? 'bg-white text-[#0F6E56] shadow-sm font-bold'
-                      : 'text-slate-500 hover:text-slate-800'
-                  }`}
-                  title="Flat Box Table View"
-                >
-                  <List className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-          </div>
-
           {/* Selected Count Banner (no-print) */}
           <div className="no-print bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-2.5 text-xs font-bold text-[#0F6E56] flex items-center justify-between shadow-xs">
             <div className="flex items-center gap-2">
@@ -1241,11 +1290,14 @@ export default function QRPrintPage() {
                 const selectedInGroupCount = groupPetiIds.filter(id => selectedPetiIds.includes(id)).length;
                 const isFullySelected = groupPetiIds.length > 0 && selectedInGroupCount === groupPetiIds.length;
                 const isPartiallySelected = selectedInGroupCount > 0 && !isFullySelected;
-                const caseInfo = parsePetiWeights(group.packing, group.conversion || 20, group.cases || group.petiCount, group.weight);
+                const caseInfo = parsePetiWeights(group.packing, group.conversion || 20, group.cases || group.petiCount, group.weight, group.availableBoxes);
+                const conv = group.conversion || 20;
+                const fullPetis = Math.floor(group.availableBoxes / conv);
+                const loosePieces = group.availableBoxes % conv;
 
                 return (
                   <div
-                    key={group.invoiceNo}
+                    key={`${group.invoiceNo}_${group.productName}_${group.batchNumber}`}
                     className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-xs transition-all hover:border-slate-300"
                   >
                     {/* Main Accordion Row Header */}
@@ -1327,17 +1379,21 @@ export default function QRPrintPage() {
                           title="Print 1 sticker per Peti for this Purchase Invoice"
                         >
                           <Printer className="w-3.5 h-3.5" />
-                          <span>Print Peti Labels ({group.cases || group.petiCount})</span>
+                          <span>Print Peti Labels ({groupPetis.length})</span>
                         </button>
 
                         {/* 1-Line Unified Stock Badge (Never wraps into 2 lines) */}
                         <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs shadow-2xs whitespace-nowrap">
                           <span className="font-extrabold text-slate-900">
-                            📦 {group.cases || group.petiCount} Peti
+                            📦 {loosePieces > 0 ? (
+                              fullPetis > 0 ? `${fullPetis} Peti + ${loosePieces} Pcs` : `${loosePieces} Pcs`
+                            ) : (
+                              `${fullPetis} Peti`
+                            )} Available
                           </span>
                           <span className="text-slate-300">|</span>
                           <span className="font-black bg-[#0F6E56] text-white px-2 py-0.5 rounded-md">
-                            {caseInfo.totalVolStr}
+                            {caseInfo.totalVolStr} Available
                           </span>
                           <span className="text-slate-300">|</span>
                           <span className="font-extrabold text-slate-800">
@@ -1345,7 +1401,7 @@ export default function QRPrintPage() {
                           </span>
                           <span className="text-slate-300">|</span>
                           <span className="font-bold text-emerald-800 bg-emerald-100/80 px-2 py-0.5 rounded-md">
-                            1 Peti = {caseInfo.caseWtStr} ({group.conversion || 20} Pcs)
+                            1 Peti = {caseInfo.caseWtStr} ({conv} Pcs)
                           </span>
                         </div>
                       </div>
@@ -1713,31 +1769,60 @@ export default function QRPrintPage() {
               )}
 
               {/* Action Buttons */}
-              <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100">
                 {printingStatus.type === 'error' ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setPrintingStatus(null);
-                      setShowPrinterHelpModal(true);
-                    }}
-                    className="text-xs font-bold text-[#0F6E56] hover:bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-200 transition-colors cursor-pointer flex items-center gap-1"
-                  >
-                    <Download className="w-3.5 h-3.5" />
-                    <span>Download Windows Service (.zip)</span>
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPrintingStatus(null);
+                        setShowPrinterHelpModal(true);
+                      }}
+                      className="text-xs font-bold text-[#0F6E56] hover:bg-emerald-50 px-2.5 py-1.5 rounded-lg border border-emerald-200 transition-colors cursor-pointer flex items-center gap-1"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>Windows Service (.zip)</span>
+                    </button>
+                    {printingStatus._retryBoxes && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const boxes = printingStatus._retryBoxes;
+                          printBoxesDirectly(boxes);
+                        }}
+                        className="bg-[#0F6E56] hover:bg-[#0B5442] text-white text-xs font-bold px-3 py-1.5 rounded-lg transition-colors cursor-pointer flex items-center gap-1 shadow-xs"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        <span>Retry Direct Print</span>
+                      </button>
+                    )}
+                  </div>
                 ) : (
                   <span className="text-[11px] text-slate-400 font-medium">
                     {printingStatus.type === 'loading' ? 'Transmitting data to printer...' : 'Ready'}
                   </span>
                 )}
-                <button
-                  type="button"
-                  onClick={() => setPrintingStatus(null)}
-                  className="bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold px-4 py-2 rounded-xl shadow-sm transition-colors cursor-pointer"
-                >
-                  {printingStatus.type === 'loading' ? 'Dismiss' : 'Done'}
-                </button>
+                <div className="flex items-center gap-2">
+                  {printingStatus.type === 'error' && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPrintingStatus(null);
+                        window.print();
+                      }}
+                      className="text-[11px] text-slate-500 hover:text-slate-800 underline cursor-pointer"
+                    >
+                      Browser Print Instead
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setPrintingStatus(null)}
+                    className="bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold px-4 py-2 rounded-xl shadow-sm transition-colors cursor-pointer"
+                  >
+                    {printingStatus.type === 'loading' ? 'Dismiss' : 'Close'}
+                  </button>
+                </div>
               </div>
             </div>
           </div>

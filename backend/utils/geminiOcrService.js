@@ -3,13 +3,9 @@ const Product = require('../models/Product');
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
-// Candidate models in preference order: 3.5 Flash-Lite, 3.5 Flash, 2.5 Flash-Lite, 2.5 Flash
+// Exclusively using Gemini 3.8 Flash model
 const MODELS = [
-  'gemini-3.5-flash-lite',
-  'gemini-3.5-flash',
-  'gemini-2.5-flash-lite',
-  'gemini-2.5-flash',
-  'gemini-1.5-flash'
+  'gemini-3.8-flash'
 ];
 
 /**
@@ -142,13 +138,13 @@ Rules:
         productName: p.name,
         hsnCode: '38089910',
         batchNumber: `BATCH-2026-${String.fromCharCode(65 + idx)}`,
-        packing: p.packingSize || '1 kg',
+        packing: p.packingSize || null,
         mfgDate: new Date().toISOString().split('T')[0],
         expDate: '',
         cases: 10,
-        casePacking: `${p.packingSize || '1 kg'}/case`,
+        casePacking: p.packingSize ? `${p.packingSize}/case` : '',
         quantity: 10,
-        weight: p.packingSize || '1 kg',
+        weight: p.packingSize || null,
         purchaseCost: p.mrp ? Math.round(p.mrp * 0.7) : 450,
         warehouseLocation: `Rack A1-Bay ${idx + 1}`,
         remarks: 'Extracted via Intelligent Parser Fallback'
@@ -297,7 +293,7 @@ Rules:
         productName: p.name,
         batchNumber: `BATCH-2026-${String.fromCharCode(65 + idx)}`,
         quantity: 5,
-        weight: p.packingSize || '1 kg'
+        weight: p.packingSize || null
       }))
     : [
         { productName: 'Vaniki Bio Boost', batchNumber: 'VB-2026-A1', quantity: 5, weight: '1 kg' },

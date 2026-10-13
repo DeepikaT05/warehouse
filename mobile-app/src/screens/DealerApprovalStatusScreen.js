@@ -9,7 +9,9 @@ export default function DealerApprovalStatusScreen() {
 
   const fetchOrders = async () => {
     try {
-      const res = await mobileApi.get('/user/orders');
+      const res = await mobileApi.get('/user/orders', {
+        params: { status: 'dealer_tracking' }
+      });
       if (res.data.success) {
         const tracked = res.data.orders.filter(o =>
           ['sent_to_dealer', 'dealer_approved', 'completed'].includes(o.orderStatus)
@@ -44,7 +46,7 @@ export default function DealerApprovalStatusScreen() {
 
       <View style={styles.infoBox}>
         <Text style={styles.infoTitle}>Bilty / Proof Document:</Text>
-        <Text style={styles.infoVal}>{item.biltyUploaded ? '✓ Bilty Uploaded by Dealer App' : '⏳ Pending Bilty upload from Dealer App'}</Text>
+        <Text style={styles.infoVal}>{item.biltyUploaded ? 'Bilty Uploaded by Dealer App' : 'Pending Bilty upload from Dealer App'}</Text>
       </View>
     </View>
   );

@@ -41,7 +41,7 @@ export default function DealerApprovalTracker() {
             photoUrl
           });
           if (res.data.success) {
-            alert('📷 Physical Goods Photo Proof saved successfully!');
+            alert('Physical Goods Photo Proof saved successfully!');
             fetchOrders();
           }
         } catch (err) {
@@ -166,7 +166,7 @@ export default function DealerApprovalTracker() {
                           <Eye className="w-3.5 h-3.5" /> View Photo
                         </button>
                         <span className="text-[9px] text-emerald-700 font-extrabold bg-emerald-100 px-1.5 py-0.5 rounded mt-0.5 inline-block">
-                          ✓ Photo Saved
+                          Photo Saved
                         </span>
                       </div>
                     </div>

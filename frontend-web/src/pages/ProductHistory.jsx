@@ -114,8 +114,11 @@ export default function ProductHistory() {
                 <p className="font-semibold text-slate-700">{boxData.manufacturer}</p>
               </div>
               <div>
-                <span className="text-[10px] text-slate-400 font-bold uppercase">Box Weight</span>
-                <p className="font-semibold text-slate-700">{boxData.weight}</p>
+                <span className="text-[10px] text-slate-400 font-bold uppercase">Packing / Weight</span>
+                <p className="font-semibold text-slate-700">{boxData.packing || boxData.weight || '1 kg'}</p>
+                {boxData.casePacking && (
+                  <p className="text-[11px] text-slate-500 font-medium">Master: {boxData.casePacking}</p>
+                )}
               </div>
               <div>
                 <span className="text-[10px] text-slate-400 font-bold uppercase">Purchase Bill</span>

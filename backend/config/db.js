@@ -1,13 +1,23 @@
 const mongoose = require('mongoose');
 
 const connectDB = async () => {
+  const uri = process.env.MONGODB_URI || process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/vaniki_stock_trace';
+
+  mongoose.set('strictQuery', true);
+
   try {
-    const connStr = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/vaniki_stock_trace';
-    const conn = await mongoose.connect(connStr);
-    console.log(`[MongoDB] Connected successfully to: ${conn.connection.host}/${conn.connection.name}`);
+    const conn = await mongoose.connect(uri, {
+      serverSelectionTimeoutMS: 8000,
+      socketTimeoutMS: 45000,
+      maxPoolSize: 20,
+      minPoolSize: 2
+    });
+    console.log(`[MongoDB] Connected: ${conn.connection.host}/${conn.connection.name}`);
+    return conn;
   } catch (error) {
-    console.error(`[MongoDB Error] Failed to connect: ${error.message}`);
-    console.log(`[MongoDB Info] Server running. Please make sure MongoDB is running locally on mongodb://127.0.0.1:27017`);
+    console.error(`[MongoDB] Connection failed: ${error.message}`);
+    console.error('[MongoDB] Check MONGODB_URI in backend/.env, then restart the server.');
+    throw error;
   }
 };
 

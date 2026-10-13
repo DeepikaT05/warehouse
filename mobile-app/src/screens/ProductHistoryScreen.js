@@ -43,7 +43,7 @@ export default function ProductHistoryScreen() {
             style={styles.scanBtn}
             onPress={() => setCameraVisible(true)}
           >
-            <Text style={styles.scanBtnText}>📷 SCAN QR WITH PHONE CAMERA</Text>
+            <Text style={styles.scanBtnText}>SCAN QR WITH PHONE CAMERA</Text>
           </TouchableOpacity>
 
           <TextInput
@@ -85,7 +85,7 @@ export default function ProductHistoryScreen() {
               ]).map((evt, idx) => (
                 <View key={idx} style={styles.timelineItem}>
                   <View style={styles.nodeCircle}>
-                    <Text style={styles.nodeIcon}>✓</Text>
+                    <Text style={styles.nodeIcon}></Text>
                   </View>
                   <View style={styles.eventContent}>
                     <View style={styles.row}>

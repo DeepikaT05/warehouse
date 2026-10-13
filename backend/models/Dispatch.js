@@ -16,9 +16,17 @@ const dispatchSchema = new mongoose.Schema({
   handoverTo: { type: String, default: '' },
   dispatchPhotoUrl: { type: String, default: '' },
   dispatchPhotoUploadedAt: { type: Date, default: null },
-  status: { type: String, enum: ['verified', 'dispatched', 'delivered'], default: 'dispatched' },
+  status: { type: String, enum: ['verified', 'dispatched', 'delivered', 'completed', 'cancelled'], default: 'dispatched' },
+  approvedBy: { type: String, default: '' },
+  approvedAt: { type: Date, default: null },
   dispatchDate: { type: Date, default: Date.now },
   createdAt: { type: Date, default: Date.now }
 });
+
+// Query indexes (list/filter/dashboard hot paths)
+dispatchSchema.index({ createdAt: -1 });
+dispatchSchema.index({ salesInvoiceNo: 1 });
+dispatchSchema.index({ dealerId: 1 });
+dispatchSchema.index({ scannedBoxQrIds: 1 });
 
 module.exports = mongoose.model('Dispatch', dispatchSchema);

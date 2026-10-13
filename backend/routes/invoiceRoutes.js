@@ -6,19 +6,27 @@ const {
   createSalesInvoice,
   getSalesInvoices,
   getInvoiceByNo,
-  getWorkersList
+  getWorkersList,
+  triggerB2BSync,
+  cancelSalesInvoice,
+  downloadB2BPdf
 } = require('../controllers/invoiceController');
 const { verifyToken } = require('../middleware/auth');
-const { requireRoles } = require('../middleware/rbac');
+const { requireAdmin } = require('../middleware/rbac');
 
-const upload = multer({ storage: multer.memoryStorage() });
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
 
-router.post('/ocr-extract', verifyToken, upload.single('billFile'), extractBillOcrData);
-router.get('/workers', verifyToken, getWorkersList);
+router.use(verifyToken);
 
-router.post('/', verifyToken, requireRoles('sales', 'admin'), createSalesInvoice);
-router.get('/', verifyToken, getSalesInvoices);
-router.get('/:invoiceNo', verifyToken, getInvoiceByNo);
+router.get('/workers', getWorkersList);
+router.get('/', getSalesInvoices);
+router.post('/sync-b2b', triggerB2BSync);
+router.get('/:id/b2b-pdf', downloadB2BPdf);
+router.post('/:id/cancel', cancelSalesInvoice);
+router.get('/:invoiceNo', getInvoiceByNo);
+
+router.post('/ocr-extract', requireAdmin, upload.single('billFile'), extractBillOcrData);
+router.post('/', requireAdmin, createSalesInvoice);
 
 module.exports = router;
 

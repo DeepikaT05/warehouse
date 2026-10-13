@@ -18,15 +18,17 @@ const {
   generateDeliveryInvoice,
   markOrderSentToDealer,
   getDealerApprovalStatus,
-  getUserDashboardSummary
+  getUserDashboardSummary,
+  cancelAssignedOrder,
+  triggerWarehouseB2BSync
 } = require('../controllers/userWarehouseController');
 const { verifyToken } = require('../middleware/auth');
 
-// Dashboard Metrics (Unrestricted Read)
-router.get('/dashboard-summary', getUserDashboardSummary);
-
-// All warehouse user routes require verifyToken
+// Every warehouse route requires a valid session
 router.use(verifyToken);
+
+// Dashboard metrics
+router.get('/dashboard-summary', getUserDashboardSummary);
 
 // Purchases & Inward
 router.get('/purchases', getPurchases);
@@ -44,7 +46,9 @@ router.post('/stock/verify-scan', verifyInitialStockScan);
 
 // Assigned Dealer Bills / Orders
 router.get('/orders', getAssignedOrders);
+router.post('/orders/sync-b2b', triggerWarehouseB2BSync);
 router.get('/orders/:id', getOrderById);
+router.post('/orders/:id/cancel', cancelAssignedOrder);
 
 // Stock Picking Workflow
 router.post('/orders/:id/start-picking', startStockPicking);
@@ -60,3 +64,4 @@ router.post('/orders/:id/mark-sent', markOrderSentToDealer);
 router.get('/orders/:id/dealer-approval-status', getDealerApprovalStatus);
 
 module.exports = router;
+

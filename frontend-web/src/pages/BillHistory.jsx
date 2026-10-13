@@ -1,22 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import api from '../utils/api';
 import { useNavigate } from 'react-router-dom';
-import {
-  FileText,
-  Search,
-  CheckCircle2,
-  Clock,
-  Truck,
-  ShieldCheck,
-  Eye,
-  Calendar,
-  Layers,
-  Building2,
-  User,
-  Filter,
-  RefreshCw,
-  ExternalLink
-} from 'lucide-react';
+import { FileText, Search, CheckCircle2, Clock, Truck, ShieldCheck, Eye, Calendar, Layers, Building2, User, Filter, RefreshCw, ExternalLink, X } from 'lucide-react';
 
 export default function BillHistory() {
   const navigate = useNavigate();
@@ -318,7 +303,7 @@ export default function BillHistory() {
                 onClick={() => setSelectedInvoice(null)}
                 className="text-slate-400 hover:text-slate-700 font-bold text-lg p-1"
               >
-                ✕
+                <X className="w-4 h-4" />
               </button>
             </div>
 

@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const Dealer = require('../models/Dealer');
 const AuditLog = require('../models/AuditLog');
 
@@ -8,6 +9,10 @@ const createDealer = async (req, res) => {
     if (!dealerName || !garageName || !phone || !address || !state || !district || !city || !pincode) {
       return res.status(400).json({ success: false, message: 'Please provide all mandatory dealer fields.' });
     }
+
+    const createdBy = (req.user?.id && mongoose.Types.ObjectId.isValid(req.user.id))
+      ? req.user.id
+      : undefined;
 
     const dealer = await Dealer.create({
       dealerName,
@@ -21,7 +26,7 @@ const createDealer = async (req, res) => {
       district,
       city,
       pincode,
-      createdBy: req.user?.id
+      createdBy
     });
 
     await AuditLog.create({

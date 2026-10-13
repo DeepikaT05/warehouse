@@ -1,34 +1,32 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, SafeAreaView, Image } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, SafeAreaView, Image, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
 import { COLORS } from '../theme';
-import mobileApi, { setAuthToken } from '../services/api';
+import { useAuth } from '../context/AuthContext';
+import { errorMessage } from '../services/api';
 
-export default function LoginScreen({ navigation }) {
+export default function LoginScreen() {
+  const { login } = useAuth();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
-  const handleLoginWithCreds = async (u, p) => {
-    const targetUser = (u || username).trim();
-    const targetPass = (p || password).trim();
-    if (!targetUser || !targetPass) {
-      alert('Please enter username and password');
+  const handleLogin = async () => {
+    const u = username.trim();
+    const p = password.trim();
+    if (!u || !p) {
+      setError('Enter your username and password.');
       return;
     }
+
+    setError('');
     setLoading(true);
     try {
-      const res = await mobileApi.post('/auth/login', { username: targetUser, password: targetPass });
-      if (res.data.success) {
-        setAuthToken(res.data.token);
-        navigation.replace('Dashboard', { user: res.data.user });
-        return;
-      } else {
-        alert(res.data.message || 'Login failed');
-      }
+      // On success the root navigator swaps to the app stack on its own.
+      await login(u, p);
     } catch (err) {
-      const errMsg = err.response?.data?.message || err.message || 'Connection error. Please check server connectivity.';
-      alert('Login Error: ' + errMsg);
+      setError(errorMessage(err, 'Login failed. Please try again.'));
     } finally {
       setLoading(false);
     }
@@ -36,57 +34,69 @@ export default function LoginScreen({ navigation }) {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.card}>
-        <Image 
-          source={require('../../assets/logo.png')} 
-          style={{ width: 80, height: 80, borderRadius: 20, marginBottom: 12 }} 
-          resizeMode="contain"
-        />
-        <Text style={styles.title}>VANIKI STOCK TRACE</Text>
-        <Text style={styles.subtitle}>Mobile WMS & QR Scanner App</Text>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.centre}>
+        <View style={styles.card}>
+          <Image source={require('../../assets/logo.png')} style={styles.logo} resizeMode="contain" />
+          <Text style={styles.title}>VANIKI STOCK TRACE</Text>
+          <Text style={styles.subtitle}>Warehouse Scanner</Text>
 
-        <View style={styles.formGroup}>
-          <Text style={styles.label}>Username</Text>
-          <TextInput
-            style={styles.input}
-            value={username}
-            onChangeText={setUsername}
-            autoCapitalize="none"
-            placeholder="enter username"
-          />
-        </View>
-
-        <View style={styles.formGroup}>
-          <Text style={styles.label}>Password</Text>
-          <View style={styles.passContainer}>
+          <View style={styles.formGroup}>
+            <Text style={styles.label}>Username</Text>
             <TextInput
-              style={[styles.input, { flex: 1, borderWidth: 0 }]}
-              secureTextEntry={!showPassword}
-              value={password}
-              onChangeText={setPassword}
-              placeholder="enter password"
+              style={styles.input}
+              value={username}
+              onChangeText={setUsername}
+              autoCapitalize="none"
+              autoCorrect={false}
+              returnKeyType="next"
+              placeholder="Enter username"
+              placeholderTextColor={COLORS.slate400}
+              editable={!loading}
             />
-            <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeBtn}>
-              <Text style={{ fontSize: 16 }}>{showPassword ? '👁️' : '🙈'}</Text>
-            </TouchableOpacity>
           </View>
-        </View>
 
-        <TouchableOpacity style={styles.button} onPress={() => handleLoginWithCreds()} disabled={loading}>
-          <Text style={styles.buttonText}>{loading ? 'Connecting Scanner...' : 'Login to Mobile WMS'}</Text>
-        </TouchableOpacity>
-      </View>
+          <View style={styles.formGroup}>
+            <Text style={styles.label}>Password</Text>
+            <View style={styles.passContainer}>
+              <TextInput
+                style={[styles.input, styles.passInput]}
+                secureTextEntry={!showPassword}
+                value={password}
+                onChangeText={setPassword}
+                autoCapitalize="none"
+                returnKeyType="go"
+                onSubmitEditing={handleLogin}
+                placeholder="Enter password"
+                placeholderTextColor={COLORS.slate400}
+                editable={!loading}
+              />
+              <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeBtn}>
+                <Text style={styles.eyeText}>{showPassword ? 'HIDE' : 'SHOW'}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {error ? <Text style={styles.error}>{error}</Text> : null}
+
+          <TouchableOpacity
+            style={[styles.button, loading && styles.buttonDisabled]}
+            onPress={handleLogin}
+            disabled={loading}
+            activeOpacity={0.85}
+          >
+            {loading
+              ? <ActivityIndicator color="#FFF" />
+              : <Text style={styles.buttonText}>Login</Text>}
+          </TouchableOpacity>
+        </View>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#0F6E56',
-    justifyContent: 'center',
-    padding: 20
-  },
+  container: { flex: 1, backgroundColor: COLORS.primary },
+  centre: { flex: 1, justifyContent: 'center', padding: 20 },
   card: {
     backgroundColor: '#FFFFFF',
     borderRadius: 24,
@@ -97,26 +107,8 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     elevation: 8
   },
-  logoBadge: {
-    width: 60,
-    height: 60,
-    borderRadius: 18,
-    backgroundColor: COLORS.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 12
-  },
-  logoText: {
-    color: '#FFF',
-    fontWeight: '900',
-    fontSize: 20
-  },
-  title: {
-    fontSize: 20,
-    fontWeight: '900',
-    color: COLORS.slate900,
-    letterSpacing: 0.5
-  },
+  logo: { width: 80, height: 80, borderRadius: 20, marginBottom: 12 },
+  title: { fontSize: 20, fontWeight: '900', color: COLORS.slate900, letterSpacing: 0.5 },
   subtitle: {
     fontSize: 12,
     fontWeight: '700',
@@ -125,16 +117,8 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     textTransform: 'uppercase'
   },
-  formGroup: {
-    width: '100%',
-    marginBottom: 14
-  },
-  label: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: COLORS.slate700,
-    marginBottom: 4
-  },
+  formGroup: { width: '100%', marginBottom: 14 },
+  label: { fontSize: 12, fontWeight: '700', color: COLORS.slate700, marginBottom: 4 },
   input: {
     backgroundColor: COLORS.slate100,
     borderRadius: 12,
@@ -154,8 +138,20 @@ const styles = StyleSheet.create({
     borderColor: COLORS.border,
     paddingRight: 10
   },
-  eyeBtn: {
-    padding: 6
+  passInput: { flex: 1, borderWidth: 0, backgroundColor: 'transparent' },
+  eyeBtn: { paddingHorizontal: 8, paddingVertical: 6 },
+  eyeText: { fontSize: 11, fontWeight: '800', color: COLORS.primary },
+  error: {
+    width: '100%',
+    backgroundColor: '#FEF2F2',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    color: COLORS.danger,
+    fontSize: 12,
+    fontWeight: '700',
+    padding: 10,
+    marginBottom: 4
   },
   button: {
     width: '100%',
@@ -163,11 +159,10 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     paddingVertical: 14,
     alignItems: 'center',
-    marginTop: 10
+    marginTop: 10,
+    minHeight: 48,
+    justifyContent: 'center'
   },
-  buttonText: {
-    color: '#FFF',
-    fontSize: 14,
-    fontWeight: '800'
-  }
+  buttonDisabled: { opacity: 0.7 },
+  buttonText: { color: '#FFF', fontSize: 14, fontWeight: '800' }
 });

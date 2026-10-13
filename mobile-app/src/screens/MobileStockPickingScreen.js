@@ -46,7 +46,7 @@ export default function MobileStockPickingScreen({ route, navigation }) {
       if (res.data.valid) {
         setScanAlert({
           type: 'success',
-          title: res.data.alreadyPicked ? 'Already Picked' : '✓ Item Verified & Picked',
+          title: res.data.alreadyPicked ? 'Already Picked' : 'Item Verified & Picked',
           message: res.data.message
         });
         setBarcodeInput('');
@@ -107,37 +107,55 @@ export default function MobileStockPickingScreen({ route, navigation }) {
     );
   }
 
-  const totalRequired = order.items?.reduce((acc, item) => acc + item.quantity, 0) || 0;
+  const totalRequired = order.totalBoxes || order.items?.reduce((acc, item) => acc + (item.totalBoxes || 1), 0) || 0;
   const totalPicked = order.pickedItems?.length || 0;
   const isFullyPicked = totalPicked >= totalRequired;
+  const isCancelledOrRejected = order.orderStatus === 'rejected' || order.orderStatus === 'cancelled' || order.isRejected || order.isCancelled;
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       {/* Header Summary */}
-      <View style={styles.headerCard}>
+      <View style={[styles.headerCard, isCancelledOrRejected && { borderColor: '#FDA4AF', backgroundColor: '#FFF1F2' }]}>
         <Text style={styles.orderNo}>Bill #{order.invoiceNo}</Text>
         <Text style={styles.dealerName}>Dealer: {order.dealerName} ({order.garageName})</Text>
-        <Text style={styles.progressText}>Picked {totalPicked} of {totalRequired} Boxes</Text>
 
-        <View style={styles.progressBarBg}>
-          <View style={[styles.progressBarFill, { width: `${totalRequired > 0 ? (totalPicked / totalRequired) * 100 : 0}%` }]} />
-        </View>
+        {isCancelledOrRejected ? (
+          <View style={{ marginTop: 8, padding: 10, backgroundColor: '#FEE2E2', borderRadius: 8, borderWidth: 1, borderColor: '#FCA5A5' }}>
+            <Text style={{ fontSize: 12, fontWeight: '900', color: '#991B1B' }}>
+              ⚠️ ORDER {order.orderStatus === 'cancelled' ? 'CANCELLED' : 'REJECTED IN B2B PORTAL'}
+            </Text>
+            <Text style={{ fontSize: 11, color: '#7F1D1D', marginTop: 2, fontWeight: '700' }}>
+              Reason: "{order.cancellationReason || order.rejectionReason || 'Order cancelled'}"
+            </Text>
+            <Text style={{ fontSize: 9, color: '#B91C1C', marginTop: 4, fontWeight: '900' }}>
+              PICKING & DISPATCH PROHIBITED
+            </Text>
+          </View>
+        ) : (
+          <>
+            <Text style={styles.progressText}>Picked {totalPicked} of {totalRequired} Boxes (Peti)</Text>
+            <View style={styles.progressBarBg}>
+              <View style={[styles.progressBarFill, { width: `${totalRequired > 0 ? (totalPicked / totalRequired) * 100 : 0}%` }]} />
+            </View>
+          </>
+        )}
       </View>
 
       {/* Barcode / Camera QR Scan Section */}
-      <View style={styles.scanSection}>
-        <View style={styles.sectionHeaderRow}>
-          <Text style={styles.sectionTitle}>Scan Box QR Sticker</Text>
-          <TouchableOpacity
-            style={styles.cameraBtn}
-            onPress={() => setCameraModalVisible(true)}
-          >
-            <Text style={styles.cameraBtnText}>📷 CAMERA SCANNER</Text>
-          </TouchableOpacity>
-        </View>
+      {!isCancelledOrRejected ? (
+        <View style={styles.scanSection}>
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionTitle}>Scan Box QR Sticker</Text>
+            <TouchableOpacity
+              style={styles.cameraBtn}
+              onPress={() => setCameraModalVisible(true)}
+            >
+              <Text style={styles.cameraBtnText}>CAMERA SCANNER</Text>
+            </TouchableOpacity>
+          </View>
 
-        <View style={styles.inputRow}>
-          <TextInput
+          <View style={styles.inputRow}>
+            <TextInput
             style={styles.input}
             placeholder="Scan QR or enter VNK-..."
             placeholderTextColor="#94A3B8"
@@ -162,26 +180,36 @@ export default function MobileStockPickingScreen({ route, navigation }) {
           </View>
         )}
       </View>
+      ) : null}
 
       {/* Required Bill Items */}
       <View style={styles.sectionCard}>
         <Text style={styles.sectionTitle}>Required Bill Items</Text>
         {order.items?.map((item, idx) => {
+          const reqBoxes = item.totalBoxes || 1;
           const pickedCount = order.pickedItems?.filter(p =>
             p.productName.toLowerCase().trim() === item.productName.toLowerCase().trim()
           ).length || 0;
 
-          const done = pickedCount >= item.quantity;
+          const done = pickedCount >= reqBoxes;
+
+          const dispName = item.displayProductName || (
+            item.weight && !item.productName?.toUpperCase().includes(item.weight.toUpperCase())
+              ? `${item.productName} (${item.weight})`
+              : item.productName
+          );
 
           return (
             <View key={idx} style={[styles.itemRow, done && styles.itemRowDone]}>
               <View style={styles.itemLeft}>
-                <Text style={styles.itemProductName}>{item.productName}</Text>
-                {item.batchNumber ? <Text style={styles.itemBatch}>Batch: {item.batchNumber}</Text> : null}
+                <Text style={styles.itemProductName}>{dispName}</Text>
+                <Text style={styles.itemBatch}>
+                  {item.batchNumber ? `Batch: ${item.batchNumber} • ` : ''}{item.quantity} Pcs ({reqBoxes} Boxes/Peti)
+                </Text>
               </View>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Text style={[styles.itemQty, done && styles.itemQtyDone]}>{pickedCount} / {item.quantity}</Text>
-                {!done && (
+                <Text style={[styles.itemQty, done && styles.itemQtyDone]}>{pickedCount} / {reqBoxes} Boxes</Text>
+                {!done && !isCancelledOrRejected && (
                   <TouchableOpacity
                     style={{ backgroundColor: '#0F6E56', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8 }}
                     onPress={() => {
@@ -199,15 +227,23 @@ export default function MobileStockPickingScreen({ route, navigation }) {
       </View>
 
       {/* Action Button */}
-      <TouchableOpacity
-        style={[styles.completeBtn, !isFullyPicked && styles.completeBtnDisabled]}
-        onPress={handleCompletePicking}
-        disabled={!isFullyPicked}
-      >
-        <Text style={styles.completeBtnText}>
-          {isFullyPicked ? '✓ Finish & Complete Stock Picking' : `Picking In Progress (${totalPicked}/${totalRequired})`}
-        </Text>
-      </TouchableOpacity>
+      {isCancelledOrRejected ? (
+        <View style={[styles.completeBtn, { backgroundColor: '#FEE2E2', borderWidth: 1, borderColor: '#FCA5A5' }]}>
+          <Text style={{ color: '#991B1B', fontWeight: '900', fontSize: 13 }}>
+            🚫 Order Cancelled / Rejected (Picking Disabled)
+          </Text>
+        </View>
+      ) : (
+        <TouchableOpacity
+          style={[styles.completeBtn, !isFullyPicked && styles.completeBtnDisabled]}
+          onPress={handleCompletePicking}
+          disabled={!isFullyPicked}
+        >
+          <Text style={styles.completeBtnText}>
+            {isFullyPicked ? 'Finish & Complete Stock Picking' : `Picking In Progress (${totalPicked}/${totalRequired})`}
+          </Text>
+        </TouchableOpacity>
+      )}
 
       {/* Camera Scanner Modal */}
       <QRScannerModal

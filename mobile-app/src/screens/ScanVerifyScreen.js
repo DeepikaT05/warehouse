@@ -31,7 +31,7 @@ export default function ScanVerifyScreen({ route, navigation }) {
     if (!inv || !inv.trim()) return;
     try {
       setInvoiceLoading(true);
-      const res = await mobileApi.get('/user/orders');
+      const res = await mobileApi.get(`/user/orders?search=${encodeURIComponent(inv.trim())}`);
       if (res.data.success && res.data.orders) {
         const found = res.data.orders.find(o => o.invoiceNo?.trim().toUpperCase() === inv.trim().toUpperCase());
         if (found) {
@@ -63,9 +63,12 @@ export default function ScanVerifyScreen({ route, navigation }) {
 
       if (res.data && res.data.verified) {
         const boxData = res.data.box;
+        if (res.data.invoice) {
+          setActiveInvoice(res.data.invoice);
+        }
         setScanResult({
           type: 'GREEN',
-          title: res.data.title || '✓ VERIFIED - BATCH MATCH',
+          title: res.data.title || 'VERIFIED - BATCH MATCH',
           reason: res.data.reason || `Box ${target} verified successfully.`,
           box: boxData
         });
@@ -79,7 +82,7 @@ export default function ScanVerifyScreen({ route, navigation }) {
       } else if (res.data && !res.data.verified) {
         setScanResult({
           type: 'RED',
-          title: res.data.title || '✖ MISMATCH DETECTED',
+          title: res.data.title || 'MISMATCH DETECTED',
           reason: res.data.reason || res.data.message || 'Box QR does not match active Sales Invoice or Batch!'
         });
         setQrInput('');
@@ -88,7 +91,7 @@ export default function ScanVerifyScreen({ route, navigation }) {
     } catch (err) {
       setScanResult({
         type: 'RED',
-        title: '✖ VERIFICATION ERROR',
+        title: 'VERIFICATION ERROR',
         reason: err.response?.data?.reason || err.response?.data?.message || err.message || 'Could not verify box QR with server.'
       });
       setQrInput('');
@@ -100,7 +103,7 @@ export default function ScanVerifyScreen({ route, navigation }) {
   const handleCompleteDispatch = async (photoData = '') => {
     if (!verifiedList || verifiedList.length === 0) {
       Alert.alert(
-        '⚠️ No Boxes Verified',
+        'No Boxes Verified',
         'Please scan and verify at least 1 box QR code before completing dispatch handover.'
       );
       return;
@@ -122,7 +125,7 @@ export default function ScanVerifyScreen({ route, navigation }) {
 
       if (res.data && res.data.success) {
         Alert.alert(
-          '✅ Dispatch Completed!',
+          'Dispatch Completed!',
           `Statement generated for ${verifiedList.length} verified boxes.`,
           [
             {
@@ -182,6 +185,12 @@ export default function ScanVerifyScreen({ route, navigation }) {
 
             <View style={styles.requiredItemsList}>
               {activeInvoice.items?.map((item, idx) => {
+                const reqBoxes = item.totalBoxes || (item.pcsPerPeti ? Math.ceil(item.quantity / item.pcsPerPeti) : 1);
+                const dispName = item.displayProductName || (
+                  item.weight && !item.productName?.toUpperCase().includes(item.weight.toUpperCase())
+                    ? `${item.productName} (${item.weight})`
+                    : item.productName
+                );
                 const verifiedCount = verifiedList.filter(b => {
                   const bName = (b.productName || '').toLowerCase().trim();
                   const iName = (item.productName || '').toLowerCase().trim();
@@ -189,21 +198,25 @@ export default function ScanVerifyScreen({ route, navigation }) {
                   const bBatch = (b.batchNumber || '').toLowerCase().trim();
                   const iBatch = (item.batchNumber || '').toLowerCase().trim();
                   const batchMatch = !iBatch || iBatch === 'any' || bBatch === iBatch;
-                  return nameMatch && batchMatch;
+                  const bWeight = (b.weight || b.packing || '').toLowerCase().replace(/\s+/g, '');
+                  const iWeight = (item.weight || '').toLowerCase().replace(/\s+/g, '');
+                  const sizeMatch = !bWeight || !iWeight || bWeight === iWeight || bName.includes(iWeight);
+                  return nameMatch && batchMatch && sizeMatch;
                 }).length;
-                const isItemDone = verifiedCount >= (item.quantity || 1);
+                const isItemDone = verifiedCount >= reqBoxes;
 
                 return (
                   <View key={idx} style={[styles.requiredItemRow, isItemDone && styles.requiredItemRowDone]}>
                     <View style={{ flex: 1 }}>
-                      <Text style={styles.requiredItemName}>• {item.productName}</Text>
+                      <Text style={styles.requiredItemName}>• {dispName}</Text>
                       <Text style={styles.requiredItemBatch}>
                         Required Batch: <Text style={{ fontWeight: '900', color: '#0F6E56' }}>{item.batchNumber || 'Any Batch'}</Text>
+                        {item.quantity ? ` • Total: ${item.quantity} Pcs (${reqBoxes} Boxes/Peti)` : ''}
                       </Text>
                     </View>
                     <View style={[styles.qtyBadge, isItemDone ? styles.qtyBadgeDone : styles.qtyBadgePending]}>
                       <Text style={[styles.qtyBadgeText, isItemDone ? styles.qtyTextDone : styles.qtyTextPending]}>
-                        {verifiedCount} / {item.quantity || 1} {isItemDone ? '✓' : 'Boxes'}
+                        {verifiedCount} / {reqBoxes} {isItemDone ? 'Done' : 'Boxes'}
                       </Text>
                     </View>
                   </View>
@@ -223,7 +236,7 @@ export default function ScanVerifyScreen({ route, navigation }) {
             onPress={() => setCameraVisible(true)}
             activeOpacity={0.8}
           >
-            <Text style={styles.cameraScanBtnText}>📷 TAP TO SCAN BOX BARCODE / QR</Text>
+            <Text style={styles.cameraScanBtnText}>TAP TO SCAN BOX BARCODE / QR</Text>
           </TouchableOpacity>
         </View>
 
@@ -247,7 +260,7 @@ export default function ScanVerifyScreen({ route, navigation }) {
               <Text style={styles.verifiedText}>VERIFIED</Text>
             </View>
             <TouchableOpacity onPress={() => removeVerifiedItem(item.qrId)} style={styles.removeBtn}>
-              <Text style={styles.removeText}>✕</Text>
+              <Text style={styles.removeText}>×</Text>
             </TouchableOpacity>
           </View>
         ))}
@@ -257,11 +270,11 @@ export default function ScanVerifyScreen({ route, navigation }) {
             style={styles.confirmBtn}
             onPress={() => {
               Alert.alert(
-                '📷 Final Step: Capture Goods Photo Proof',
+                'Final Step: Capture Goods Photo Proof',
                 'Take a real photo of all loaded boxes/truck as physical proof before completing handover.',
                 [
                   {
-                    text: '📷 Capture Goods Photo & Proceed',
+                    text: 'Capture Goods Photo & Proceed',
                     onPress: () => {
                       setPhotoCaptureVisible(true);
                     }
@@ -276,7 +289,7 @@ export default function ScanVerifyScreen({ route, navigation }) {
               );
             }}
           >
-            <Text style={styles.confirmBtnText}>🚚 📷 Capture Photo & Generate Handover Sheet</Text>
+            <Text style={styles.confirmBtnText}>Capture Photo & Generate Handover Sheet</Text>
           </TouchableOpacity>
         )}
       </ScrollView>
@@ -285,7 +298,7 @@ export default function ScanVerifyScreen({ route, navigation }) {
       <PhotoCaptureModal
         visible={photoCaptureVisible}
         onClose={() => setPhotoCaptureVisible(false)}
-        title="📷 Take Dispatched Goods Photo"
+        title="Take Dispatched Goods Photo"
         onPhotoCaptured={(photoData) => {
           setPhotoCaptureVisible(false);
           handleCompleteDispatch(photoData);
@@ -309,7 +322,7 @@ export default function ScanVerifyScreen({ route, navigation }) {
         <Modal visible transparent animationType="fade">
           <View style={[styles.overlay, scanResult.type === 'GREEN' ? styles.bgGreen : styles.bgRed]}>
             <View style={styles.overlayIconCircle}>
-              <Text style={styles.overlayIcon}>{scanResult.type === 'GREEN' ? '✓' : '✖'}</Text>
+              <Text style={styles.overlayIcon}>{scanResult.type === 'GREEN' ? 'PASS' : 'FAIL'}</Text>
             </View>
 
             <Text style={styles.overlayTitle}>{scanResult.title}</Text>
@@ -331,7 +344,7 @@ export default function ScanVerifyScreen({ route, navigation }) {
                   setTimeout(() => setCameraVisible(true), 200);
                 }}
               >
-                <Text style={[styles.dismissBtnText, { color: COLORS.slate900 }]}>📷 SCAN NEXT BOX ➔</Text>
+                <Text style={[styles.dismissBtnText, { color: COLORS.slate900 }]}>SCAN NEXT BOX</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.dismissBtn, { width: 90, backgroundColor: 'rgba(255,255,255,0.2)' }]}

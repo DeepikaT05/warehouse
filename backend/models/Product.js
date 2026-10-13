@@ -6,7 +6,9 @@ const productSchema = new mongoose.Schema({
   technicalName: { type: String, default: '' },
   category: { type: String, required: true, default: 'Crop Protection' },
   unit: { type: String, default: 'kg' },
-  packingSize: { type: String, default: '1 kg' },
+  packingSize: { type: String, default: null },
+  conversion: { type: Number, default: 0 }, // Pieces / Bottles per Peti from Tally (CONVERSION)
+  alternateUnit: { type: String, default: 'BOX' }, // Alternate unit in Tally (BOX, PETI, CASE)
   mrp: { type: Number, default: 0 },
   minStockThreshold: { type: Number, default: 20 },
   description: { type: String, default: '' },
@@ -21,5 +23,8 @@ productSchema.pre('save', function(next) {
   this.updatedAt = Date.now();
   next();
 });
+
+// Query indexes (list/filter/dashboard hot paths)
+productSchema.index({ isDeleted: 1, name: 1 });
 
 module.exports = mongoose.model('Product', productSchema);

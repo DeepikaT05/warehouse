@@ -3,7 +3,7 @@ import { Modal, View, Text, StyleSheet, TouchableOpacity, SafeAreaView, Activity
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { COLORS } from '../theme';
 
-export default function PhotoCaptureModal({ visible, onClose, onPhotoCaptured, title = '📷 Capture Goods Photo Proof' }) {
+export default function PhotoCaptureModal({ visible, onClose, onPhotoCaptured, title = 'Capture Goods Photo Proof' }) {
   const [permission, requestPermission] = useCameraPermissions();
   const [capturing, setCapturing] = useState(false);
   const cameraRef = useRef(null);
@@ -39,7 +39,7 @@ export default function PhotoCaptureModal({ visible, onClose, onPhotoCaptured, t
         <View style={styles.header}>
           <Text style={styles.headerTitle}>{title}</Text>
           <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-            <Text style={styles.closeBtnText}>✕ Close</Text>
+            <Text style={styles.closeBtnText}>Close</Text>
           </TouchableOpacity>
         </View>
 
@@ -76,7 +76,7 @@ export default function PhotoCaptureModal({ visible, onClose, onPhotoCaptured, t
                     <ActivityIndicator size="small" color="#FFF" />
                   ) : (
                     <View style={styles.captureInnerCircle}>
-                      <Text style={styles.snapIcon}>📸</Text>
+                      <Text style={styles.snapIcon}></Text>
                     </View>
                   )}
                 </TouchableOpacity>

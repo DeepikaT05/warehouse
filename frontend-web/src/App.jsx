@@ -1,27 +1,34 @@
-import React from 'react';
+import React, { Suspense, lazy } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import Navbar from './components/Navbar';
 import Sidebar from './components/Sidebar';
 
 import Login from './pages/Login';
-import Dashboard from './pages/Dashboard';
-import PurchaseEntry from './pages/PurchaseEntry';
-import QRPrintPage from './pages/QRPrintPage';
-import StockManagement from './pages/StockManagement';
-import ProductMaster from './pages/ProductMaster';
-import InvoiceUpload from './pages/InvoiceUpload';
-import BillHistory from './pages/BillHistory';
-import DealerMaster from './pages/DealerMaster';
-import DispatchVerify from './pages/DispatchVerify';
-import DeliveryStatement from './pages/DeliveryStatement';
-import ProductHistory from './pages/ProductHistory';
-import Reports from './pages/Reports';
-import SettingsPage from './pages/SettingsPage';
-import AdminPanel from './pages/AdminPanel';
-import AssignedOrders from './pages/AssignedOrders';
-import StockPicking from './pages/StockPicking';
-import DealerApprovalTracker from './pages/DealerApprovalTracker';
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+const PurchaseEntry = lazy(() => import('./pages/PurchaseEntry'));
+const QRPrintPage = lazy(() => import('./pages/QRPrintPage'));
+const StockManagement = lazy(() => import('./pages/StockManagement'));
+const ProductMaster = lazy(() => import('./pages/ProductMaster'));
+const InvoiceUpload = lazy(() => import('./pages/InvoiceUpload'));
+const BillHistory = lazy(() => import('./pages/BillHistory'));
+const DealerMaster = lazy(() => import('./pages/DealerMaster'));
+const DispatchVerify = lazy(() => import('./pages/DispatchVerify'));
+const DeliveryStatement = lazy(() => import('./pages/DeliveryStatement'));
+const ProductHistory = lazy(() => import('./pages/ProductHistory'));
+const Reports = lazy(() => import('./pages/Reports'));
+const SettingsPage = lazy(() => import('./pages/SettingsPage'));
+const AdminPanel = lazy(() => import('./pages/AdminPanel'));
+const AssignedOrders = lazy(() => import('./pages/AssignedOrders'));
+const DealerApprovalTracker = lazy(() => import('./pages/DealerApprovalTracker'));
+
+function PageLoading() {
+  return (
+    <div className="flex items-center justify-center py-20 text-xs font-bold text-slate-400">
+      Loading...
+    </div>
+  );
+}
 
 function AdminRoute({ children }) {
   const { user } = useAuth();
@@ -52,6 +59,7 @@ function ProtectedLayout() {
       <div className="flex flex-1 h-[calc(100vh-61px)] overflow-hidden">
         <Sidebar />
         <main className="flex-1 p-6 overflow-y-auto h-full">
+          <Suspense fallback={<PageLoading />}>
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/purchase" element={<AdminRoute><PurchaseEntry /></AdminRoute>} />
@@ -59,7 +67,6 @@ function ProtectedLayout() {
             <Route path="/stock" element={<AdminRoute><StockManagement /></AdminRoute>} />
             <Route path="/products" element={<AdminRoute><ProductMaster /></AdminRoute>} />
             <Route path="/assigned-orders" element={<AssignedOrders />} />
-            <Route path="/stock-picking/:id" element={<DispatchVerify />} />
             <Route path="/dealer-approval" element={<DealerApprovalTracker />} />
             <Route path="/invoices" element={<AdminRoute><InvoiceUpload /></AdminRoute>} />
             <Route path="/bill-history" element={<BillHistory />} />
@@ -72,6 +79,7 @@ function ProtectedLayout() {
             <Route path="/admin" element={<AdminRoute><AdminPanel /></AdminRoute>} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
+          </Suspense>
         </main>
       </div>
     </div>

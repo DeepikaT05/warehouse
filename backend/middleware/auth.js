@@ -1,28 +1,40 @@
 const jwt = require('jsonwebtoken');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'vaniki_stock_trace_secret_2026_key';
+const TOKEN_TTL = process.env.JWT_EXPIRES_IN || '30d';
 
-const verifyToken = (req, res, next) => {
+const readToken = (req) => {
   const authHeader = req.headers.authorization;
-  const token = (authHeader && authHeader.startsWith('Bearer ')) 
-    ? authHeader.split(' ')[1] 
-    : (req.query.token || req.headers['x-access-token']);
+  if (authHeader && authHeader.startsWith('Bearer ')) return authHeader.slice(7).trim();
+  return req.headers['x-access-token'] || req.query.token || null;
+};
+
+// Real verification. No silent fallback user: an invalid token is a 401 so the
+// client can refresh/redirect to login instead of silently acting as someone else.
+const verifyToken = (req, res, next) => {
+  const token = readToken(req);
 
   if (!token) {
-    // Fallback authentication for mobile scanner sessions
-    req.user = { id: 'warehouse1', username: 'warehouse1', role: 'user', name: 'Warehouse Operator' };
-    return next();
+    return res.status(401).json({ success: false, code: 'NO_TOKEN', message: 'Authentication required. Please log in.' });
   }
 
   try {
-    const decoded = jwt.verify(token, JWT_SECRET);
-    req.user = decoded;
-    next();
-  } catch (error) {
-    // Fallback for mobile scanner sessions if token expired
-    req.user = { id: 'warehouse1', username: 'warehouse1', role: 'user', name: 'Warehouse Operator' };
-    next();
+    req.user = jwt.verify(token, JWT_SECRET);
+    return next();
+  } catch (err) {
+    const expired = err.name === 'TokenExpiredError';
+    return res.status(401).json({
+      success: false,
+      code: expired ? 'TOKEN_EXPIRED' : 'TOKEN_INVALID',
+      message: expired ? 'Session expired. Please log in again.' : 'Invalid session token. Please log in again.'
+    });
   }
 };
 
-module.exports = { verifyToken, JWT_SECRET };
+const signToken = (user) => jwt.sign(
+  { id: String(user._id), username: user.username, role: user.role, name: user.name },
+  JWT_SECRET,
+  { expiresIn: TOKEN_TTL }
+);
+
+module.exports = { verifyToken, signToken, JWT_SECRET, TOKEN_TTL };

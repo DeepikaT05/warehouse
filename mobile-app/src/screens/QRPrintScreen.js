@@ -53,7 +53,7 @@ export default function QRPrintScreen({ route }) {
               <Text style={styles.companyHeader}>VANIKI CROP SCIENCE</Text>
               <View style={styles.stickerBody}>
                 <View style={styles.qrPlaceholder}>
-                  <Text style={{ fontSize: 24 }}>⬛</Text>
+                  <Text style={{ fontSize: 24 }}>QR</Text>
                   <Text style={styles.qrLabel}>[ QR CODE ]</Text>
                 </View>
                 <View style={styles.details}>
@@ -72,7 +72,7 @@ export default function QRPrintScreen({ route }) {
           disabled={boxes.length === 0}
           onPress={() => Alert.alert('Printer Command', `Sending ${boxes.length} sticker print job to Thermal Printer!`)}
         >
-          <Text style={styles.printBtnText}>🖨️ Send to Mobile Thermal Printer</Text>
+          <Text style={styles.printBtnText}>Send to Mobile Thermal Printer</Text>
         </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>

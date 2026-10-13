@@ -3,6 +3,21 @@ import api from '../utils/api';
 import { useAuth } from '../context/AuthContext';
 import { Package, Plus, Search, Trash2, Edit3, ShieldAlert, CheckCircle2 } from 'lucide-react';
 
+export function getPiecesPerPeti(packing) {
+  if (!packing) return 10;
+  const p = packing.toString().toUpperCase().trim();
+  if (p.includes('160 GM') || p.includes('160GM') || p.includes('CURVE')) return 8;
+  if (p.includes('1 LTR') || p.includes('1 LT') || p.includes('1 KG') || p.includes('1KG')) return 10;
+  if (p.includes('500 ML') || p.includes('500 GM') || p.includes('500GM') || p.includes('500ML')) return 20;
+  if (p.includes('250 ML') || p.includes('250 GM') || p.includes('250GM') || p.includes('250ML')) return 40;
+  if (p.includes('100 ML') || p.includes('100 GM') || p.includes('100GM') || p.includes('100ML')) return 50;
+  if (p.includes('150 ML') || p.includes('200 ML')) return 20;
+  if (p.includes('300 ML') || p.includes('300 GM') || p.includes('400 ML') || p.includes('800 ML')) return 20;
+  if (p.includes('4 KG') || p.includes('5 KG') || p.includes('4KG') || p.includes('5KG')) return 4;
+  if (p.includes('8 GM') || p.includes('15 ML') || p.includes('30 GM') || p.includes('50 GM') || p.includes('75 GM')) return 100;
+  return 10;
+}
+
 export default function ProductMaster() {
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin';
@@ -19,6 +34,7 @@ export default function ProductMaster() {
     category: 'Crop Protection',
     unit: 'kg',
     packingSize: '1 kg',
+    conversion: '10',
     mrp: '0',
     minStockThreshold: '20',
     description: ''
@@ -54,6 +70,7 @@ export default function ProductMaster() {
         category: product.category || 'Crop Protection',
         unit: product.unit || 'kg',
         packingSize: product.packingSize || '1 kg',
+        conversion: String(product.conversion || getPiecesPerPeti(product.packingSize)),
         mrp: product.mrp || '0',
         minStockThreshold: product.minStockThreshold || '20',
         description: product.description || ''
@@ -66,6 +83,7 @@ export default function ProductMaster() {
         category: 'Crop Protection',
         unit: 'kg',
         packingSize: '1 kg',
+        conversion: '10',
         mrp: '0',
         minStockThreshold: '20',
         description: ''
@@ -164,6 +182,7 @@ export default function ProductMaster() {
                 <th className="p-3.5">Product Name</th>
                 <th className="p-3.5">Category</th>
                 <th className="p-3.5">Packing</th>
+                <th className="p-3.5">1 Peti Qty (Conversion)</th>
                 <th className="p-3.5">MRP (₹)</th>
                 <th className="p-3.5">Current Available Stock</th>
                 <th className="p-3.5">Min Alert</th>
@@ -173,11 +192,11 @@ export default function ProductMaster() {
             <tbody className="divide-y divide-slate-100">
               {loading ? (
                 <tr>
-                  <td colSpan="8" className="p-6 text-center text-slate-400 font-medium">Loading product catalog...</td>
+                  <td colSpan="9" className="p-6 text-center text-slate-400 font-medium">Loading product catalog...</td>
                 </tr>
               ) : products.length === 0 ? (
                 <tr>
-                  <td colSpan="8" className="p-6 text-center text-slate-400 font-medium">No products found.</td>
+                  <td colSpan="9" className="p-6 text-center text-slate-400 font-medium">No products found.</td>
                 </tr>
               ) : (
                 products.map((p) => (
@@ -186,6 +205,11 @@ export default function ProductMaster() {
                     <td className="p-3.5 font-bold text-[#0F6E56]">{p.name}</td>
                     <td className="p-3.5">{p.category}</td>
                     <td className="p-3.5">{p.packingSize} ({p.unit})</td>
+                    <td className="p-3.5">
+                      <span className="bg-emerald-50 text-[#0F6E56] font-bold px-2 py-0.5 rounded-md border border-emerald-200">
+                        📦 {p.conversion || getPiecesPerPeti(p.packingSize)} Pcs / Peti
+                      </span>
+                    </td>
                     <td className="p-3.5">₹{p.mrp}</td>
                     <td className="p-3.5">
                       <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-extrabold ${
@@ -302,7 +326,22 @@ export default function ProductMaster() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">
+                    1 Peti Qty (Conversion) *
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    required
+                    value={formData.conversion}
+                    onChange={(e) => setFormData({ ...formData, conversion: e.target.value })}
+                    className="w-full bg-emerald-50/50 border border-emerald-300 rounded-xl p-2.5 font-bold text-[#0F6E56]"
+                    placeholder="e.g. 10"
+                  />
+                  <p className="text-[10px] text-slate-400 mt-0.5">Tally 1 Peti = Pcs</p>
+                </div>
                 <div>
                   <label className="block font-bold text-slate-700 mb-1">MRP (₹)</label>
                   <input
@@ -313,7 +352,7 @@ export default function ProductMaster() {
                   />
                 </div>
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">Min Stock Threshold</label>
+                  <label className="block font-bold text-slate-700 mb-1">Min Stock Alert</label>
                   <input
                     type="number"
                     value={formData.minStockThreshold}

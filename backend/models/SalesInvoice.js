@@ -4,7 +4,11 @@ const invoiceItemSchema = new mongoose.Schema({
   productName: { type: String, required: true },
   batchNumber: { type: String, required: true },
   quantity: { type: Number, required: true },
-  weight: { type: String, default: '1 kg' }
+  weight: { type: String, default: '1 kg' },
+  hsnCode: { type: String, default: '' },
+  price: { type: Number, default: 0 },
+  taxRate: { type: Number, default: 18 },
+  total: { type: Number, default: 0 }
 }, { _id: false });
 
 const pickedItemSchema = new mongoose.Schema({
@@ -31,6 +35,7 @@ const salesInvoiceSchema = new mongoose.Schema({
   garageName: { type: String, default: '' },
   dealerAddress: { type: String, default: '' },
   dealerPhone: { type: String, default: '' },
+  dealerGst: { type: String, default: '' },
   invoiceDate: { type: Date, default: Date.now },
   items: [invoiceItemSchema],
   pickedItems: [pickedItemSchema],
@@ -48,15 +53,48 @@ const salesInvoiceSchema = new mongoose.Schema({
       'invoice_generated',
       'sent_to_dealer',
       'dealer_approved',
-      'completed'
+      'completed',
+      'rejected',
+      'cancelled'
     ],
     default: 'new'
   },
   status: {
     type: String,
-    enum: ['pending', 'partially_dispatched', 'verified', 'dispatched', 'completed'],
+    enum: ['pending', 'partially_dispatched', 'verified', 'dispatched', 'completed', 'rejected', 'cancelled'],
     default: 'pending'
   },
+
+  // Central B2B Integration Fields
+  centralInvoiceId: { type: String, default: '' },
+  centralStoreId: { type: String, default: '' },
+  buyerOrderNo: { type: String, default: '' },
+  buyerOrderDate: { type: Date, default: null },
+  dispatchDocNo: { type: String, default: '' },
+  despatchedThrough: { type: String, default: '' },
+  destination: { type: String, default: '' },
+  termsOfDelivery: { type: String, default: '' },
+  paymentTerms: { type: String, default: '' },
+  paymentStatus: { type: String, default: 'unpaid' },
+  tallySyncStatus: { type: String, default: 'pending' },
+  subtotal: { type: Number, default: 0 },
+  totalTaxAmount: { type: Number, default: 0 },
+  totalAmount: { type: Number, default: 0 },
+  source: { type: String, default: 'warehouse' }, // 'warehouse' | 'b2b_portal'
+  isB2BOrder: { type: Boolean, default: false },
+  b2bPdfUrl: { type: String, default: '' },
+  b2bXmlUrl: { type: String, default: '' },
+
+  // Rejection & Cancellation Tracking
+  isRejected: { type: Boolean, default: false },
+  isCancelled: { type: Boolean, default: false },
+  rejectionReason: { type: String, default: '' },
+  rejectedAt: { type: Date, default: null },
+  rejectedBy: { type: String, default: '' },
+  cancellationReason: { type: String, default: '' },
+  cancelledAt: { type: Date, default: null },
+  cancelledBy: { type: String, default: '' },
+
   billFileUrl: { type: String, default: '' },
   deliveryInvoiceNo: { type: String, default: '' },
   transportName: { type: String, default: '' },
@@ -73,8 +111,20 @@ const salesInvoiceSchema = new mongoose.Schema({
   dispatchPhotoUrl: { type: String, default: '' },
   dispatchPhotoUploadedAt: { type: Date, default: null },
   dealerRemarks: { type: String, default: '' },
-  uploadedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  uploadedBy: { 
+    type: mongoose.Schema.Types.ObjectId, 
+    ref: 'User',
+    set: v => (v && mongoose.Types.ObjectId.isValid(v) ? v : undefined)
+  },
   createdAt: { type: Date, default: Date.now }
 });
+
+// Query indexes (list/filter/dashboard hot paths)
+salesInvoiceSchema.index({ orderStatus: 1, createdAt: -1 });
+salesInvoiceSchema.index({ status: 1, createdAt: -1 });
+salesInvoiceSchema.index({ assignedToUser: 1 });
+salesInvoiceSchema.index({ dealerId: 1 });
+salesInvoiceSchema.index({ centralInvoiceId: 1 });
+salesInvoiceSchema.index({ isB2BOrder: 1 });
 
 module.exports = mongoose.model('SalesInvoice', salesInvoiceSchema);

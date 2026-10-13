@@ -24,9 +24,9 @@ export default function QRScannerModal({ visible, onClose, onScan }) {
       <SafeAreaView style={styles.container}>
         {/* Header bar */}
         <View style={styles.header}>
-          <Text style={styles.headerTitle}>📷 Live Camera QR Scanner</Text>
+          <Text style={styles.headerTitle}>Live Camera QR Scanner</Text>
           <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-            <Text style={styles.closeBtnText}>✕ Close</Text>
+            <Text style={styles.closeBtnText}>Close</Text>
           </TouchableOpacity>
         </View>
 
