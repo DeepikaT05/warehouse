@@ -276,40 +276,49 @@ const verifyBoxScan = async (req, res) => {
 
     // Enrich invoice items with totalBoxes and formatted packing size
     const enrichedInvoiceItems = (invoice.items || []).map(itm => {
-      const mProd = matchProduct(itm.productName, itm.productCode, itm.weight, products);
+      const itmProdName = (itm.productName || '').replace(/\s+/g, ' ').trim();
+      const mProd = matchProduct(itmProdName, itm.productCode, itm.weight, products);
       const itmPcs = (mProd && Number(mProd.conversion) > 0) ? Number(mProd.conversion) : getPiecesPerPeti(itm.weight || (mProd && mProd.packingSize));
       const totalBoxes = Math.max(1, Math.ceil((itm.quantity || 1) / itmPcs));
       const itmObj = itm.toObject ? itm.toObject() : itm;
-      const sizeStr = itm.weight && !itm.productName.toUpperCase().includes(itm.weight.toUpperCase())
+      const sizeStr = itm.weight && !itmProdName.toUpperCase().includes(itm.weight.toUpperCase())
         ? ` (${itm.weight})`
         : '';
       return {
         ...itmObj,
+        productName: itmProdName,
         pcsPerPeti: itmPcs,
         totalBoxes,
-        displayProductName: `${itm.productName}${sizeStr}`,
+        displayProductName: `${itmProdName}${sizeStr}`,
         displayQty: `${totalBoxes} Boxes (${itm.quantity} Pcs)`
       };
     });
+
+    const cleanMatchedProdName = matchingItem && matchingItem.productName
+      ? (matchingItem.productName || '').replace(/\s+/g, ' ').trim()
+      : (box.productName || '').replace(/\s+/g, ' ').trim();
 
     return res.json({
       success: true,
       verified: true,
       code: 'VERIFIED_READY',
       title: 'VERIFIED - BATCH MATCH',
-      reason: `Box ${box.qrId} (${box.productName} | Batch: ${box.batchNumber || 'N/A'}) matches Invoice #${salesInvoiceNo} for dealer ${invoice.dealerName || 'Dealer'}.`,
+      reason: `Box ${box.qrId} (${cleanMatchedProdName} | Batch: ${box.batchNumber || 'N/A'}) matches Invoice #${salesInvoiceNo} for dealer ${invoice.dealerName || 'Dealer'}.`,
       box: {
         id: box._id,
         qrId: box.qrId,
-        productName: box.productName,
-        batchNumber: box.batchNumber,
-        weight: box.weight,
+        productName: cleanMatchedProdName,
+        batchNumber: (matchingItem && matchingItem.batchNumber && matchingItem.batchNumber.toUpperCase() !== 'ANY')
+          ? (matchingItem.batchNumber || '').trim()
+          : (box.batchNumber || '').trim(),
+        weight: (matchingItem && matchingItem.weight) || box.weight,
+        packing: (matchingItem && matchingItem.weight) || box.packing || box.weight,
         warehouseLocation: box.warehouseLocation,
         pcsPerPeti
       },
       matchedItem: {
-        productName: matchingItem.productName,
-        batchNumber: matchingItem.batchNumber,
+        productName: cleanMatchedProdName,
+        batchNumber: (matchingItem.batchNumber || '').trim(),
         orderedQuantity: matchingItem.quantity || 1,
         orderedBoxes: orderedBoxes,
         pcsPerPeti: pcsPerPeti,

@@ -115,8 +115,9 @@ async function enrichOrdersWithPetis(orders) {
     let orderTotalPieces = 0;
 
     const enrichedItems = (order.items || []).map(item => {
-      const lineName = normText(item.productName);
-      const matchedProd = matchProduct(item.productName, item.productCode, item.weight, products);
+      const cleanProdName = (item.productName || '').replace(/\s+/g, ' ').trim();
+      const lineName = normText(cleanProdName);
+      const matchedProd = matchProduct(cleanProdName, item.productCode, item.weight, products);
 
       let pcsPerPeti = 10;
       if (matchedProd && Number(matchedProd.conversion) > 0) {
@@ -130,10 +131,10 @@ async function enrichOrdersWithPetis(orders) {
       orderTotalBoxes += totalBoxes;
       orderTotalPieces += qty;
 
-      const itemSize = extractPackingSize(item.productName) || extractPackingSize(item.weight);
+      const itemSize = extractPackingSize(cleanProdName) || extractPackingSize(item.weight);
       const pickedBoxes = (order.pickedItems || []).filter(p => {
         const pBase = extractBaseProductName(p.productName);
-        const lBase = extractBaseProductName(item.productName);
+        const lBase = extractBaseProductName(cleanProdName);
         const nameMatch = pBase === lBase || (pBase && lBase && (pBase.includes(lBase) || lBase.includes(pBase)));
         const pSize = extractPackingSize(p.packing) || extractPackingSize(p.productName) || extractPackingSize(p.weight);
         const sizeMatch = !itemSize || !pSize || pSize === itemSize;
@@ -141,16 +142,17 @@ async function enrichOrdersWithPetis(orders) {
       }).length;
 
       const itemObj = (item && typeof item.toObject === 'function') ? item.toObject() : item;
-      const sizeStr = item.weight && !item.productName.toUpperCase().includes(item.weight.toUpperCase())
+      const sizeStr = item.weight && !cleanProdName.toUpperCase().includes(item.weight.toUpperCase())
         ? ` (${item.weight})`
         : '';
 
       return {
         ...itemObj,
+        productName: cleanProdName,
         pcsPerPeti,
         totalBoxes,
         pickedBoxes,
-        displayProductName: `${item.productName}${sizeStr}`,
+        displayProductName: `${cleanProdName}${sizeStr}`,
         packingSize: itemSize,
         displayQty: `${totalBoxes} Boxes (${qty} Pcs)`
       };

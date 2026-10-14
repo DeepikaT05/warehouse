@@ -192,8 +192,8 @@ export default function ScanVerifyScreen({ route, navigation }) {
                     : item.productName
                 );
                 const verifiedCount = verifiedList.filter(b => {
-                  const bName = (b.productName || '').toLowerCase().trim();
-                  const iName = (item.productName || '').toLowerCase().trim();
+                  const bName = (b.productName || '').toLowerCase().replace(/\s+/g, ' ').trim();
+                  const iName = (item.productName || '').toLowerCase().replace(/\s+/g, ' ').trim();
                   const nameMatch = bName === iName || bName.includes(iName) || iName.includes(bName);
                   const bBatch = (b.batchNumber || '').toLowerCase().trim();
                   const iBatch = (item.batchNumber || '').toLowerCase().trim();
