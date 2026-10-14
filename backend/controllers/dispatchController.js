@@ -443,46 +443,8 @@ const confirmDispatch = async (req, res) => {
       timestamp: now
     });
 
-    // Expand Peti QRs to include all underlying pieces in each Peti chunk
-    const allBoxesToDispatch = [];
-    const scannedBoxRecords = await StockBox.find({
-      qrId: { $in: scannedQrIds },
-      isDeleted: { $ne: true }
-    }).lean();
-
-    for (const box of scannedBoxRecords) {
-      const conv = box.conversion && Number(box.conversion) > 1 ? Number(box.conversion) : 1;
-      const qrPrefix = (box.qrId.match(/^([A-Za-z]+-)/) || ['VNK-'])[0];
-      const qrNum = parseInt(box.qrId.replace(qrPrefix, ''), 10);
-
-      if (!isNaN(qrNum) && conv > 1) {
-        const targetQrIds = [];
-        for (let k = 0; k < conv; k++) {
-          targetQrIds.push(`${qrPrefix}${qrNum + k}`);
-        }
-        const siblingBoxes = await StockBox.find({
-          qrId: { $in: targetQrIds },
-          batchNumber: box.batchNumber,
-          productName: box.productName,
-          isDeleted: { $ne: true }
-        }).select('qrId').lean();
-
-        if (siblingBoxes && siblingBoxes.length > 0) {
-          siblingBoxes.forEach(sb => {
-            if (!allBoxesToDispatch.includes(sb.qrId)) allBoxesToDispatch.push(sb.qrId);
-          });
-        } else {
-          if (!allBoxesToDispatch.includes(box.qrId)) allBoxesToDispatch.push(box.qrId);
-        }
-      } else {
-        if (!allBoxesToDispatch.includes(box.qrId)) allBoxesToDispatch.push(box.qrId);
-      }
-    }
-
-    // Ensure all scannedQrIds are in allBoxesToDispatch as well
-    scannedQrIds.forEach(id => {
-      if (!allBoxesToDispatch.includes(id)) allBoxesToDispatch.push(id);
-    });
+    // Only the boxes whose QRs were explicitly scanned must be marked as dispatched
+    const allBoxesToDispatch = [...new Set(scannedQrIds.filter(Boolean))];
 
     const boxUpdate = await StockBox.updateMany(
       { qrId: { $in: allBoxesToDispatch }, isDeleted: { $ne: true } },
