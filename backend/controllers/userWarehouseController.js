@@ -167,7 +167,7 @@ async function enrichOrdersWithPetis(orders) {
       totalBoxes: orderTotalBoxes,
       totalPieces: orderTotalPieces,
       totalRequiredBoxes: orderTotalBoxes,
-      scannedBoxes: (order.pickedItems || []).length
+      scannedBoxes: (order.pickedItems && order.pickedItems.length > 0) ? order.pickedItems.length : (order.scannedCount || 0)
     };
   });
 }
@@ -579,6 +579,29 @@ const getAssignedOrders = async (req, res) => {
 
     const conditions = [];
 
+    // 1. Sync and fetch all salesInvoiceNo that have a completed dispatch record
+    const Dispatch = mongoose.model('Dispatch');
+    const dispatchedInvoices = await Dispatch.find({ status: { $ne: 'cancelled' } }).distinct('salesInvoiceNo');
+    if (dispatchedInvoices.length > 0) {
+      await SalesInvoice.updateMany(
+        {
+          $or: [
+            { invoiceNo: { $in: dispatchedInvoices } },
+            { orderId: { $in: dispatchedInvoices } }
+          ],
+          status: { $nin: ['dispatched', 'completed'] }
+        },
+        {
+          $set: {
+            status: 'dispatched',
+            orderStatus: 'completed'
+          }
+        }
+      );
+    }
+
+    const isCompletedView = ['completed', 'dispatched', 'history', 'dealer_tracking', 'sent_to_dealer', 'all', 'any'].includes(status) || includeDispatched === 'true';
+
     if (status) {
       if (status === 'rejected') {
         conditions.push({ $or: [{ orderStatus: 'rejected' }, { isRejected: true }] });
@@ -596,14 +619,16 @@ const getAssignedOrders = async (req, res) => {
         conditions.push({
           $or: [
             { orderStatus: { $in: ['completed', 'sent_to_dealer', 'dealer_approved'] } },
-            { status: { $in: ['dispatched', 'completed'] } }
+            { status: { $in: ['dispatched', 'completed'] } },
+            { invoiceNo: { $in: dispatchedInvoices } }
           ]
         });
       } else if (status === 'dealer_tracking' || status === 'sent_to_dealer') {
         conditions.push({
           $or: [
             { orderStatus: { $in: ['sent_to_dealer', 'dealer_approved', 'completed'] } },
-            { status: 'dispatched' }
+            { status: 'dispatched' },
+            { invoiceNo: { $in: dispatchedInvoices } }
           ]
         });
       } else if (status === 'all' || status === 'any') {
@@ -623,15 +648,23 @@ const getAssignedOrders = async (req, res) => {
           isCancelled: { $ne: true }
         });
       }
-    } else if (!search && includeDispatched !== 'true') {
-      // Default view for Dashboard & Active Queue:
-      // Exclude dispatched, completed, cancelled, and rejected orders
+    }
+
+    // Default view for Dashboard & Active Queue:
+    // Strictly exclude dispatched, completed, cancelled, and rejected orders (even if search is active)
+    if (!isCompletedView) {
       conditions.push({
         status: { $nin: ['dispatched', 'completed'] },
         orderStatus: { $nin: ['completed', 'sent_to_dealer', 'dealer_approved', 'rejected', 'cancelled'] },
         isRejected: { $ne: true },
         isCancelled: { $ne: true }
       });
+      if (dispatchedInvoices.length > 0) {
+        conditions.push({
+          invoiceNo: { $nin: dispatchedInvoices },
+          orderId: { $nin: dispatchedInvoices }
+        });
+      }
     }
 
     if (search) {

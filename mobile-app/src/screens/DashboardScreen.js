@@ -114,7 +114,8 @@ export default function DashboardScreen({ navigation }) {
   useFocusEffect(
     useCallback(() => {
       fetchMetrics();
-      fetchBillsPage(currentPage, false);
+      pageCacheRef.current = {};
+      fetchBillsPage(currentPage, true);
     }, [currentPage])
   );
 

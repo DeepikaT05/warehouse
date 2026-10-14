@@ -298,6 +298,30 @@ const verifyBoxScan = async (req, res) => {
       ? (matchingItem.productName || '').replace(/\s+/g, ' ').trim()
       : (box.productName || '').replace(/\s+/g, ' ').trim();
 
+    // Persist verified box in invoice.pickedItems so scan progress is never lost
+    if (invoice && invoice._id) {
+      const alreadyPicked = (invoice.pickedItems || []).some(p => p.qrId === box.qrId);
+      if (!alreadyPicked) {
+        await SalesInvoice.updateOne(
+          { _id: invoice._id },
+          {
+            $push: {
+              pickedItems: {
+                qrId: box.qrId,
+                barcode: box.barcode || box.qrId,
+                productName: cleanMatchedProdName,
+                batchNumber: box.batchNumber || '',
+                weight: box.weight || box.packing,
+                scannedAt: new Date(),
+                scannedBy: req.user?.username || 'Warehouse Operator'
+              }
+            },
+            $inc: { scannedCount: 1 }
+          }
+        );
+      }
+    }
+
     return res.json({
       success: true,
       verified: true,
@@ -359,7 +383,13 @@ const confirmDispatch = async (req, res) => {
     }
 
     const cleanInvoiceNo = (salesInvoiceNo && salesInvoiceNo.trim()) ? salesInvoiceNo.trim() : `DSP-INV-${Date.now().toString().slice(-4)}`;
-    const invoice = await SalesInvoice.findOne({ invoiceNo: cleanInvoiceNo }).populate('dealerId');
+    const invoice = await SalesInvoice.findOne({
+      $or: [
+        { invoiceNo: cleanInvoiceNo },
+        { invoiceNo: { $regex: `^${cleanInvoiceNo}$`, $options: 'i' } },
+        { orderId: cleanInvoiceNo }
+      ]
+    }).populate('dealerId');
 
     if (invoice && (invoice.orderStatus === 'rejected' || invoice.orderStatus === 'cancelled' || invoice.isCancelled || invoice.isRejected)) {
       return res.status(400).json({
@@ -466,6 +496,19 @@ const confirmDispatch = async (req, res) => {
       invoice.orderStatus = 'completed';
       if (!invoice.dispatchedAt) invoice.dispatchedAt = now;
       invoice.scannedCount = scannedQrIds.length;
+
+      // Persist pickedItems from scanned boxes so previously scanned items never disappear
+      const scannedBoxes = await StockBox.find({ qrId: { $in: scannedQrIds } }).lean();
+      invoice.pickedItems = scannedBoxes.map(b => ({
+        qrId: b.qrId,
+        barcode: b.barcode || b.qrId,
+        productName: b.productName,
+        batchNumber: b.batchNumber,
+        weight: b.weight || b.packing,
+        scannedAt: now,
+        scannedBy: actor
+      }));
+
       if (dispatchPhotoUrl) {
         invoice.dispatchPhotoUrl = dispatchPhotoUrl;
         invoice.dispatchPhotoUploadedAt = new Date();

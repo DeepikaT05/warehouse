@@ -31,11 +31,23 @@ export default function ScanVerifyScreen({ route, navigation }) {
     if (!inv || !inv.trim()) return;
     try {
       setInvoiceLoading(true);
-      const res = await mobileApi.get(`/user/orders?search=${encodeURIComponent(inv.trim())}`);
+      const res = await mobileApi.get(`/user/orders?search=${encodeURIComponent(inv.trim())}&includeDispatched=true`);
       if (res.data.success && res.data.orders) {
         const found = res.data.orders.find(o => o.invoiceNo?.trim().toUpperCase() === inv.trim().toUpperCase());
         if (found) {
           setActiveInvoice(found);
+          // Restore previously scanned boxes into verifiedList so they NEVER disappear!
+          if (found.pickedItems && found.pickedItems.length > 0) {
+            setVerifiedList(found.pickedItems.map(p => ({
+              id: p._id || p.id,
+              qrId: p.qrId,
+              productName: p.productName,
+              batchNumber: p.batchNumber,
+              weight: p.weight,
+              packing: p.weight,
+              pcsPerPeti: p.pcsPerPeti || 10
+            })));
+          }
         }
       }
     } catch (e) {
@@ -321,37 +333,82 @@ export default function ScanVerifyScreen({ route, navigation }) {
       {scanResult && (
         <Modal visible transparent animationType="fade">
           <View style={[styles.overlay, scanResult.type === 'GREEN' ? styles.bgGreen : styles.bgRed]}>
-            <View style={styles.overlayIconCircle}>
-              <Text style={styles.overlayIcon}>{scanResult.type === 'GREEN' ? 'PASS' : 'FAIL'}</Text>
-            </View>
-
-            <Text style={styles.overlayTitle}>{scanResult.title}</Text>
-            <Text style={styles.overlayReason}>{scanResult.reason}</Text>
-
-            {scanResult.box && (
-              <View style={styles.boxInfoCard}>
-                <Text style={styles.boxInfoQr}>ID: {scanResult.box.qrId}</Text>
-                <Text style={styles.boxInfoProd}>{scanResult.box.productName}</Text>
-                <Text style={styles.boxInfoBatch}>Batch: {scanResult.box.batchNumber || '2026A'}</Text>
+            <View style={styles.overlayInner}>
+              <View style={styles.overlayIconCircle}>
+                <Text style={styles.overlayIcon}>{scanResult.type === 'GREEN' ? "✓" : "✕"}</Text>
               </View>
-            )}
 
-            <View style={{ flexDirection: 'row', gap: 12, marginTop: 24, width: '100%' }}>
-              <TouchableOpacity
-                style={[styles.dismissBtn, { flex: 1, backgroundColor: '#FFF' }]}
-                onPress={() => {
-                  setScanResult(null);
-                  setTimeout(() => setCameraVisible(true), 200);
-                }}
-              >
-                <Text style={[styles.dismissBtnText, { color: COLORS.slate900 }]}>SCAN NEXT BOX</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.dismissBtn, { width: 90, backgroundColor: 'rgba(255,255,255,0.2)' }]}
-                onPress={() => setScanResult(null)}
-              >
-                <Text style={styles.dismissBtnText}>Close</Text>
-              </TouchableOpacity>
+              <View style={styles.overlayBadge}>
+                <Text style={styles.overlayBadgeText}>
+                  {scanResult.type === 'GREEN' ? "VERIFIED MATCH" : "MISMATCH DETECTED"}
+                </Text>
+              </View>
+
+              <Text style={styles.overlayTitle}>{scanResult.title}</Text>
+              <Text style={styles.overlayReason}>{scanResult.reason}</Text>
+
+              {scanResult.box && (
+                <View style={styles.boxInfoCard}>
+                  <View style={styles.boxHeaderRow}>
+                    <View style={styles.boxQrTag}>
+                      <Text style={styles.boxQrTagLabel}>BOX QR</Text>
+                      <Text style={styles.boxInfoQr}>{scanResult.box.qrId}</Text>
+                    </View>
+                    <View style={styles.boxMatchTag}>
+                      <Text style={styles.boxMatchTagText}>VERIFIED ✓</Text>
+                    </View>
+                  </View>
+
+                  <Text style={styles.boxInfoProd} numberOfLines={2}>
+                    {scanResult.box.productName}
+                  </Text>
+
+                  <View style={styles.boxDetailsGrid}>
+                    <View style={styles.boxDetailCol}>
+                      <Text style={styles.boxDetailLabel}>BATCH NO</Text>
+                      <Text style={styles.boxDetailValueBold}>
+                        {scanResult.box.batchNumber || "N/A"}
+                      </Text>
+                    </View>
+                    {(scanResult.box.weight || scanResult.box.packing) ? (
+                      <View style={styles.boxDetailCol}>
+                        <Text style={styles.boxDetailLabel}>PACKING</Text>
+                        <Text style={styles.boxDetailValue}>
+                          {scanResult.box.weight || scanResult.box.packing}
+                        </Text>
+                      </View>
+                    ) : null}
+                    {scanResult.box.pcsPerPeti ? (
+                      <View style={styles.boxDetailCol}>
+                        <Text style={styles.boxDetailLabel}>PCS/PETI</Text>
+                        <Text style={styles.boxDetailValue}>
+                          {scanResult.box.pcsPerPeti} Pcs
+                        </Text>
+                      </View>
+                    ) : null}
+                  </View>
+                </View>
+              )}
+
+              <View style={styles.modalActionRow}>
+                <TouchableOpacity
+                  style={styles.modalScanNextBtn}
+                  onPress={() => {
+                    setScanResult(null);
+                    setTimeout(() => setCameraVisible(true), 200);
+                  }}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.modalScanNextBtnText}>SCAN NEXT BOX 📷</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.modalCloseBtn}
+                  onPress={() => setScanResult(null)}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.modalCloseBtnText}>Done</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
         </Modal>
@@ -392,19 +449,122 @@ const styles = StyleSheet.create({
   removeText: { color: COLORS.danger, fontWeight: '900', fontSize: 14 },
   confirmBtn: { backgroundColor: COLORS.success, borderRadius: 14, paddingVertical: 14, alignItems: 'center', marginTop: 10 },
   confirmBtnText: { color: '#FFF', fontWeight: '900', fontSize: 13 },
-  overlay: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 },
-  bgGreen: { backgroundColor: '#1D9E75' }, // Success Verified Screen
-  bgRed: { backgroundColor: '#E53E3E' },   // Mismatch Alert Screen
-  overlayIconCircle: { width: 90, height: 90, borderRadius: 45, backgroundColor: 'rgba(255,255,255,0.25)', alignItems: 'center', justifyContent: 'center', marginBottom: 16 },
-  overlayIcon: { fontSize: 50, color: '#FFF', fontWeight: '900', textAlign: 'center' },
-  overlayTitle: { fontSize: 22, fontWeight: '900', color: '#FFF', textAlign: 'center' },
-  overlayReason: { fontSize: 13, fontWeight: '600', color: '#FFF', textAlign: 'center', marginTop: 8, marginBottom: 20 },
-  boxInfoCard: { backgroundColor: '#FFF', borderRadius: 16, padding: 16, width: '100%', alignItems: 'center', marginBottom: 24 },
-  boxInfoQr: { fontSize: 16, fontWeight: '900', fontFamily: 'monospace', color: COLORS.primary },
-  boxInfoProd: { fontSize: 13, fontWeight: '700', color: COLORS.slate900, marginTop: 4 },
-  boxInfoBatch: { fontSize: 11, color: COLORS.slate500, marginTop: 2 },
-  dismissBtn: { backgroundColor: '#FFF', paddingHorizontal: 30, paddingVertical: 14, borderRadius: 16, shadowColor: '#000', shadowOpacity: 0.2, elevation: 4 },
-  dismissBtnText: { color: COLORS.slate900, fontWeight: '900', fontSize: 14 },
+  overlay: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
+  bgGreen: { backgroundColor: '#0F766E' }, // Sleek Emerald/Teal verified green
+  bgRed: { backgroundColor: '#BE123C' },   // Sleek Rose/Red alert
+  overlayInner: { width: '100%', maxWidth: 360, alignItems: 'center' },
+  overlayIconCircle: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    backgroundColor: 'rgba(255,255,255,0.22)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.4)',
+  },
+  overlayIcon: { fontSize: 32, color: '#FFF', fontWeight: '900', textAlign: 'center', lineHeight: 36 },
+  overlayBadge: {
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    paddingHorizontal: 12,
+    paddingVertical: 3,
+    borderRadius: 20,
+    marginBottom: 6,
+  },
+  overlayBadgeText: { color: '#FFF', fontSize: 10, fontWeight: '900', letterSpacing: 0.8 },
+  overlayTitle: { fontSize: 16, fontWeight: '800', color: '#FFF', textAlign: 'center', letterSpacing: 0.3 },
+  overlayReason: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: 'rgba(255,255,255,0.92)',
+    textAlign: 'center',
+    marginTop: 4,
+    marginBottom: 16,
+    paddingHorizontal: 12,
+    lineHeight: 17,
+  },
+  boxInfoCard: {
+    backgroundColor: '#FFF',
+    borderRadius: 14,
+    padding: 14,
+    width: '100%',
+    marginBottom: 18,
+    shadowColor: '#000',
+    shadowOpacity: 0.12,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  boxHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+    paddingBottom: 8,
+    marginBottom: 8,
+  },
+  boxQrTag: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  boxQrTagLabel: {
+    backgroundColor: '#F1F5F9',
+    color: '#64748B',
+    fontSize: 9,
+    fontWeight: '800',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  boxInfoQr: { fontSize: 13, fontWeight: '800', fontFamily: 'monospace', color: '#0F172A' },
+  boxMatchTag: {
+    backgroundColor: '#ECFDF5',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+  },
+  boxMatchTagText: { color: '#065F46', fontWeight: '900', fontSize: 10 },
+  boxInfoProd: { fontSize: 13, fontWeight: '800', color: '#0F172A', marginBottom: 10, lineHeight: 18 },
+  boxDetailsGrid: {
+    flexDirection: 'row',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 8,
+    padding: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    gap: 8,
+  },
+  boxDetailCol: { flex: 1 },
+  boxDetailLabel: { fontSize: 9, fontWeight: '700', color: '#64748B', marginBottom: 2 },
+  boxDetailValueBold: { fontSize: 12, fontWeight: '900', color: '#0F6E56' },
+  boxDetailValue: { fontSize: 11, fontWeight: '700', color: '#1E293B' },
+  modalActionRow: { flexDirection: 'row', gap: 10, width: '100%' },
+  modalScanNextBtn: {
+    flex: 1,
+    backgroundColor: '#FFF',
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  modalScanNextBtnText: { color: '#0F172A', fontWeight: '900', fontSize: 12, letterSpacing: 0.3 },
+  modalCloseBtn: {
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.22)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.35)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalCloseBtnText: { color: '#FFF', fontWeight: '800', fontSize: 12 },
   billRequiredCard: { backgroundColor: '#FFF', borderRadius: 14, padding: 14, borderWidth: 1.5, borderColor: '#0F6E56', marginBottom: 14 },
   billHeaderRow: { borderBottomWidth: 1, borderBottomColor: '#F1F5F9', pb: 8, marginBottom: 8 },
   billTitle: { fontSize: 13, fontWeight: '900', color: '#0F6E56' },
